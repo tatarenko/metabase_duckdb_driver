@@ -12,13 +12,13 @@
 (driver/register! :duckdb, :parent :sql-jdbc)
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
-  [_ {:keys [database_file, read_only], :as details}]
+  [_ {:keys [database_file, read_only, old_implicit_casting], :as details}]
   (let [conn_details (merge
    {:classname         "org.duckdb.DuckDBDriver"
     :subprotocol       "duckdb"
     :subname           (or database_file "")
     "duckdb.read_only" (str read_only)
-    "old_implicit_casting" "true"}
+    "old_implicit_casting" (str old_implicit_casting)}
    (dissoc details :database_file :read_only :port :engine))]
    conn_details))
 

@@ -1,6 +1,6 @@
 info:
   name: Metabase DuckDB Driver
-  version: 1.0.0-SNAPSHOT-0.1.12
+  version: 1.0.0-SNAPSHOT-0.1.13
   description: Allows Metabase to connect to DuckDB databases.
 contact-info:
   name: Alexander Golubov
@@ -19,6 +19,11 @@ driver:
       display-name: Establish a read-only connection
       default: false
       type: boolean
+    - name: old_implicit_casting
+      display-name: Use old_implicit_casting
+      default: false
+      type: boolean
+
 init:
   - step: load-namespace
     namespace: metabase.driver.duckdb
