@@ -2,25 +2,48 @@
   (:require [clojure.java.jdbc :as jdbc]
             [medley.core :as m]
             [metabase.driver :as driver]
+            [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
             [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
             [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
             [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
             [metabase.driver.sql.query-processor :as sql.qp]
+            [metabase.public-settings.premium-features :as premium-features]
             [metabase.util.honey-sql-2 :as hx])
-  (:import [java.sql Statement ResultSet ResultSetMetaData Types]))
+  (:import [java.sql
+            ResultSet
+            ResultSetMetaData
+            Statement
+            Types]))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
+(defn- jdbc-spec
+  "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
+  [{:keys [database_file, read_only, motherduck_token-value, old_implicit_casting], :as details}]
+  (-> details
+      (merge
+       (let [conn_details (merge
+                           {:classname         "org.duckdb.DuckDBDriver"
+                            :subprotocol       "duckdb"
+                            :subname           (or database_file "")
+                            "duckdb.read_only" (str read_only)
+                            "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
+                            "temp_directory"   (str database_file ".tmp")
+                            "old_implicit_casting" (str old_implicit_casting)
+                            }
+                           (when (seq motherduck_token-value)     ;; Only configure the option if token is provided
+                             {"motherduck_token" motherduck_token-value})
+                           )]
+         conn_details))
+      (dissoc details :database_file :read_only :motherduck_token-value)
+      sql-jdbc.common/handle-additional-options
+      ))
+
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
-  [_ {:keys [database_file, read_only, old_implicit_casting], :as details}]
-  (let [conn_details (merge
-   {:classname         "org.duckdb.DuckDBDriver"
-    :subprotocol       "duckdb"
-    :subname           (or database_file "")
-    "duckdb.read_only" (str read_only)
-    "old_implicit_casting" (str old_implicit_casting)}
-   (dissoc details :database_file :read_only :port :engine))]
-   conn_details))
+  [_ details-map]
+  (let [props (-> details-map
+                  (select-keys [:database_file :read_only :motherduck_token-value :additional-options]))]
+    (jdbc-spec props)))
 
 (defmethod sql.qp/honey-sql-version :duckdb
            [_driver]
