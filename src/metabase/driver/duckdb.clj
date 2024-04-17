@@ -30,6 +30,7 @@
                             "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
                             "temp_directory"   (str database_file ".tmp")
                             "old_implicit_casting" (str old_implicit_casting)
+                            "motherduck_attach_mode"  "single"    ;; when connecting to MotherDuck, explicitly connect to a single database
                             }
                            (when (seq motherduck_token-value)     ;; Only configure the option if token is provided
                              {"motherduck_token" motherduck_token-value})
