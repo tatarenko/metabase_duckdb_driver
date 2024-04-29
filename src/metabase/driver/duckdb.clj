@@ -19,7 +19,7 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, motherduck_token-value, old_implicit_casting], :as details}]
+  [{:keys [database_file, read_only, motherduck_token-value, old_implicit_casting], :as details}] 
   (-> details
       (merge
        (let [conn_details (merge
@@ -29,11 +29,11 @@
                             "duckdb.read_only" (str read_only)
                             "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
                             "temp_directory"   (str database_file ".tmp")
-                            "old_implicit_casting" (str old_implicit_casting)
-                            "motherduck_attach_mode"  "single"    ;; when connecting to MotherDuck, explicitly connect to a single database
+                            "old_implicit_casting" (str old_implicit_casting) 
                             }
                            (when (seq motherduck_token-value)     ;; Only configure the option if token is provided
-                             {"motherduck_token" motherduck_token-value})
+                             {"motherduck_token" motherduck_token-value
+                              "motherduck_attach_mode"  "single"})  ;; when connecting to MotherDuck, explicitly connect to a single database
                            )]
          conn_details))
       (dissoc details :database_file :read_only :motherduck_token-value)
@@ -43,7 +43,7 @@
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
   (let [props (-> details-map
-                  (select-keys [:database_file :read_only :motherduck_token-value :additional-options]))]
+                  (select-keys [:database_file :read_only :motherduck_token-value :additional-options :old_implicit_casting]))]
     (jdbc-spec props)))
 
 (defmethod sql.qp/honey-sql-version :duckdb
