@@ -9,7 +9,7 @@
             [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
             [metabase.driver.sql.query-processor :as sql.qp]
             [metabase.public-settings.premium-features :as premium-features]
-            [metabase.util.honey-sql-2 :as hx])
+            [metabase.util.honey-sql-2 :as h2x])
   (:import [java.sql
             ResultSet
             ResultSetMetaData
@@ -129,30 +129,30 @@
   [driver hsql-form amount unit]
   (if (= unit :quarter)
     (recur driver hsql-form (* amount 3) :month)
-    (hx/+ (hx/->timestamp hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
+    (h2x/+ (h2x/->timestamp hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
 
 (defmethod sql.qp/date [:duckdb :default]         [_ _ expr] expr)
-(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (hx/literal :minute) (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (hx/literal :hour) (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (hx/literal :day) (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear (hx/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (h2x/literal :hour) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (h2x/literal :day) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear (h2x/->timestamp expr)])
 
 (defmethod sql.qp/date [:duckdb :day-of-week]
   [_ _ expr]
-  (sql.qp/adjust-day-of-week :duckdb [:dayofweek (hx/->timestamp expr)]))
+  (sql.qp/adjust-day-of-week :duckdb [:dayofweek (h2x/->timestamp expr)]))
 
 (defmethod sql.qp/date [:duckdb :week]
   [_ _ expr]
-  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (hx/literal :week)) (hx/->timestamp expr)))
+  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) (h2x/->timestamp expr)))
 
-(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (hx/literal :month) (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (hx/literal :quarter) (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter (hx/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (hx/literal :year) (hx/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (h2x/literal :quarter) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (h2x/literal :year) (h2x/->timestamp expr)])
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
@@ -189,14 +189,6 @@
   (if (.execute stmt sql)
     (.getResultSet stmt)
     (empty-rs [])))
-
-(defn- is_motherduck_single_mode 
-  [database_file]
-  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
-
-(defn- motherduck_db_name
-  [database_file]
-  (subs database_file 3))
 
 (defmethod driver/describe-database :duckdb
   [driver database] 
