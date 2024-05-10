@@ -190,6 +190,14 @@
     (.getResultSet stmt)
     (empty-rs [])))
 
+(defn- is_motherduck_single_mode 
+  [database_file]
+  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
+
+(defn- motherduck_db_name
+  [database_file]
+  (subs database_file 3))
+
 (defmethod driver/describe-database :duckdb
   [driver database] 
   (let [get_tables_query "select * from information_schema.tables"]
