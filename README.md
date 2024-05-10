@@ -16,9 +16,9 @@ core Metabase GitHub repository.
 
 ### Where to find it
 
-[Click here](https://github.com/AlexR2D2/metabase_duckdb_driver/releases/latest) to view the latest release of the Metabase DuckDB driver; click the link to download `duckdb.metabase-driver.jar`.
+[Click here](https://github.com/MotherDuck-Open-Source/metabase_duckdb_driver/releases/latest) to view the latest release of the Metabase DuckDB driver; click the link to download `duckdb.metabase-driver.jar`.
 
-You can find past releases of the DuckDB driver [here](https://github.com/AlexR2D2/metabase_duckdb_driver/releases).
+You can find past releases of the DuckDB driver [here](https://github.com/MotherDuck-Open-Source/metabase_duckdb_driver/releases), and releases earlier than 0.2.6 (corresponding to DuckDB v0.10.0) [here](https://github.com/AlexR2D2/metabase_duckdb_driver/releases).
 
 ### How to Install it
 
@@ -149,3 +149,8 @@ vscode ➜ /workspaces/duckdb_plugin $ cd metabase
 vscode ➜ /workspaces/duckdb_plugin $ clojure -X:build:drivers:build/driver :driver :duckdb
 ```
 13. jar file of DuckDB plugin will be generated here duckdb_plugin/metabase/resources/modules/duckdb.metabase-driver.jar
+
+
+## Acknowledgement
+
+Thanks @AlexR2D2 for originally authoring this connector.
