@@ -132,32 +132,31 @@
     (h2x/+ (h2x/->timestamp hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
 
 (defmethod sql.qp/date [:duckdb :default]         [_ _ expr] expr)
-(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (h2x/literal :hour) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (h2x/literal :day) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) expr])
+(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute expr])
+(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (h2x/literal :hour) expr])
+(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour expr])
+(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (h2x/literal :day) expr])
+(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day expr])
+(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear expr])
 
 (defmethod sql.qp/date [:duckdb :day-of-week]
   [_ _ expr]
-  (sql.qp/adjust-day-of-week :duckdb [:dayofweek (h2x/->timestamp expr)]))
+  (sql.qp/adjust-day-of-week :duckdb [:dayofweek expr]))
 
 (defmethod sql.qp/date [:duckdb :week]
   [_ _ expr]
-  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) (h2x/->timestamp expr)))
+  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) expr))
 
-(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (h2x/literal :quarter) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (h2x/literal :year) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) expr])
+(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month expr])
+(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (h2x/literal :quarter) expr])
+(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter expr])
+(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (h2x/literal :year) expr])
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
   [:from_unixtime expr])
-
 
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
 ;; DuckDB JDBC implementation.
