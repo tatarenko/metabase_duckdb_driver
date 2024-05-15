@@ -8,6 +8,7 @@
             [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
             [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
             [metabase.driver.sql.query-processor :as sql.qp]
+            [metabase.models.secret :as secret]
             [metabase.public-settings.premium-features :as premium-features]
             [metabase.util.honey-sql-2 :as h2x])
   (:import [java.sql
@@ -20,32 +21,35 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, motherduck_token-value, old_implicit_casting], :as details}] 
-  (-> details
-      (merge
-       (let [conn_details (merge
-                           {:classname         "org.duckdb.DuckDBDriver"
-                            :subprotocol       "duckdb"
-                            :subname           (or database_file "")
-                            "duckdb.read_only" (str read_only)
-                            "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
-                            "temp_directory"   (str database_file ".tmp")
-                            "old_implicit_casting" (str old_implicit_casting)
-                            "jdbc_stream_results" "true"}
-                           (when (seq (re-find #"^md:" database_file)) 
-                             {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
-                           (when (seq motherduck_token-value)     ;; Only configure the option if token is provided
-                             {"motherduck_token" motherduck_token-value}))]  
-                           
-         conn_details))
-      (dissoc details :database_file :read_only :motherduck_token-value)
-      sql-jdbc.common/handle-additional-options))
-      
+  [{:keys [database_file, read_only, old_implicit_casting, motherduck_token], :as details}]
+  (let [result (-> details
+                   (merge
+                    (let [conn_details (merge
+                                        {:classname         "org.duckdb.DuckDBDriver"
+                                         :subprotocol       "duckdb"
+                                         :subname           (or database_file "")
+                                         "duckdb.read_only" (str read_only)
+                                         "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
+                                         "temp_directory"   (str database_file ".tmp")
+                                         "old_implicit_casting" (str old_implicit_casting)
+                                         "jdbc_stream_results" "true"}
+                                        (when (seq (re-find #"^md:" database_file)) 
+                                          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
+                                        (when (seq motherduck_token)     ;; Only configure the option if token is provided
+                                          {"motherduck_token" motherduck_token}))]
+                      conn_details))
+                   (dissoc details :database_file :read_only :port :engine :motherduck_token)
+                   sql-jdbc.common/handle-additional-options)]
+    result
+    ))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
   (let [props (-> details-map
-                  (select-keys [:database_file :read_only :motherduck_token-value :additional-options :old_implicit_casting]))
+                  (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token")
+                                                    secret/value->string)
+                                                (secret/get-secret-string details-map "motherduck_token"))})
+                  (select-keys [:database_file :read_only :motherduck_token :old_implicit_casting]))
         spec (jdbc-spec props)]
     spec))
 
@@ -132,32 +136,31 @@
     (h2x/+ (h2x/->timestamp hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
 
 (defmethod sql.qp/date [:duckdb :default]         [_ _ expr] expr)
-(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (h2x/literal :hour) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (h2x/literal :day) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) expr])
+(defmethod sql.qp/date [:duckdb :minute-of-hour]  [_ _ expr] [:minute expr])
+(defmethod sql.qp/date [:duckdb :hour]            [_ _ expr] [:date_trunc (h2x/literal :hour) expr])
+(defmethod sql.qp/date [:duckdb :hour-of-day]     [_ _ expr] [:hour expr])
+(defmethod sql.qp/date [:duckdb :day]             [_ _ expr] [:date_trunc (h2x/literal :day) expr])
+(defmethod sql.qp/date [:duckdb :day-of-month]    [_ _ expr] [:day expr])
+(defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear expr])
 
 (defmethod sql.qp/date [:duckdb :day-of-week]
   [_ _ expr]
-  (sql.qp/adjust-day-of-week :duckdb [:dayofweek (h2x/->timestamp expr)]))
+  (sql.qp/adjust-day-of-week :duckdb [:dayofweek expr]))
 
 (defmethod sql.qp/date [:duckdb :week]
   [_ _ expr]
-  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) (h2x/->timestamp expr)))
+  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) expr))
 
-(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (h2x/literal :quarter) (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter (h2x/->timestamp expr)])
-(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (h2x/literal :year) (h2x/->timestamp expr)])
+(defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) expr])
+(defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month expr])
+(defmethod sql.qp/date [:duckdb :quarter]         [_ _ expr] [:date_trunc (h2x/literal :quarter) expr])
+(defmethod sql.qp/date [:duckdb :quarter-of-year] [_ _ expr] [:quarter expr])
+(defmethod sql.qp/date [:duckdb :year]            [_ _ expr] [:date_trunc (h2x/literal :year) expr])
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
   [:from_unixtime expr])
-
 
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
 ;; DuckDB JDBC implementation.

@@ -19,24 +19,15 @@ driver:
       display-name: Establish a read-only connection
       default: false
       type: boolean
+    - name: old_implicit_casting
+      display-name: Use DuckDB old_implicit_casting option
+      default: true
+      type: boolean
     - name: motherduck_token
       display-name: Motherduck Token
       type: secret
       secret-kind: password
       required: false
-      visible-if:
-        advanced-options: true
-    - name: old_implicit_casting
-      display-name: Use old_implicit_casting
-      default: false
-      type: boolean
-    - advanced-options-start
-    - merge:
-        - additional-options
-        - display-name: Additional connection string options (optional)
-          placeholder: ''
-          visible-if:
-            advanced-options: true
 
 init:
   - step: load-namespace
