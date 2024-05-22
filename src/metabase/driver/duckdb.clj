@@ -21,7 +21,7 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, old_implicit_casting, motherduck_token], :as details}]
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}]
   (let [result (-> details
                    (merge
                     (let [conn_details (merge
@@ -29,6 +29,7 @@
                                          :subprotocol       "duckdb"
                                          :subname           (or database_file "")
                                          "duckdb.read_only" (str read_only)
+                                         "allow_unsigned_extensions" (str allow_unsigned_extensions)
                                          "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
                                          "temp_directory"   (str database_file ".tmp")
                                          "old_implicit_casting" (str old_implicit_casting)
@@ -38,7 +39,7 @@
                                         (when (seq motherduck_token)     ;; Only configure the option if token is provided
                                           {"motherduck_token" motherduck_token}))]
                       conn_details))
-                   (dissoc details :database_file :read_only :port :engine :motherduck_token)
+                   (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token)
                    sql-jdbc.common/handle-additional-options)]
     result
     ))
@@ -49,7 +50,7 @@
                   (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token")
                                                     secret/value->string)
                                                 (secret/get-secret-string details-map "motherduck_token"))})
-                  (select-keys [:database_file :read_only :motherduck_token :old_implicit_casting]))
+                  (select-keys [:database_file :read_only :allow_unsigned_extensions :motherduck_token :old_implicit_casting]))
         spec (jdbc-spec props)]
     spec))
 
