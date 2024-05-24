@@ -23,6 +23,10 @@ driver:
       display-name: Use DuckDB old_implicit_casting option
       default: true
       type: boolean
+    - name: allow_unsigned_extensions
+      display-name: Allow loading unsigned extensions
+      default: false
+      type: boolean
     - name: motherduck_token
       display-name: Motherduck Token
       type: secret
