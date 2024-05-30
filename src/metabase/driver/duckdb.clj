@@ -21,38 +21,34 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}]
-  (let [result (-> details
-                   (merge
-                    (let [conn_details (merge
-                                        {:classname         "org.duckdb.DuckDBDriver"
-                                         :subprotocol       "duckdb"
-                                         :subname           (or database_file "")
-                                         "duckdb.read_only" (str read_only)
-                                         "allow_unsigned_extensions" (str allow_unsigned_extensions)
-                                         "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
-                                         "temp_directory"   (str database_file ".tmp")
-                                         "old_implicit_casting" (str old_implicit_casting)
-                                         "jdbc_stream_results" "true"}
-                                        (when (seq (re-find #"^md:" database_file)) 
-                                          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
-                                        (when (seq motherduck_token)     ;; Only configure the option if token is provided
-                                          {"motherduck_token" motherduck_token}))]
-                      conn_details))
-                   (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token)
-                   sql-jdbc.common/handle-additional-options)]
-    result
-    ))
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}] 
+  (-> details 
+      (merge
+       {:classname         "org.duckdb.DuckDBDriver"
+        :subprotocol       "duckdb"
+        :subname           (or database_file "")
+        "duckdb.read_only" (str read_only) 
+        "allow_unsigned_extensions" (str allow_unsigned_extensions)
+        "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
+        "temp_directory"   (str database_file ".tmp")
+        "old_implicit_casting" (str old_implicit_casting)
+        "jdbc_stream_results" "true"}
+       (when (seq (re-find #"^md:" database_file)) 
+         {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
+       (when (seq motherduck_token)     ;; Only configure the option if token is provided
+         {"motherduck_token" motherduck_token}))
+      
+      (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token)
+      sql-jdbc.common/handle-additional-options))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
-  (let [props (-> details-map
-                  (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token")
-                                                    secret/value->string)
-                                                (secret/get-secret-string details-map "motherduck_token"))})
-                  (select-keys [:database_file :read_only :allow_unsigned_extensions :motherduck_token :old_implicit_casting]))
-        spec (jdbc-spec props)]
-    spec))
+  (-> details-map 
+      (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token") 
+                                        secret/value->string) 
+                                    (secret/get-secret-string details-map "motherduck_token"))}) 
+      (select-keys [:database_file :read_only :allow_unsigned_extensions :motherduck_token :old_implicit_casting])
+      jdbc-spec))
 
 (defmethod sql.qp/honey-sql-version :duckdb
            [_driver]
@@ -62,24 +58,24 @@
   (sql-jdbc.sync/pattern-based-database-type->base-type 
    [[#"BOOLEAN"      :type/Boolean]
     [#"BOOL"         :type/Boolean]
-    [#"LOGICAL"      :type/Boolean] 
+    [#"LOGICAL"      :type/Boolean]
     [#"HUGEINT"      :type/BigInteger]
     [#"BIGINT"       :type/BigInteger]
-    [#"UBIGINT"      :type/BigInteger]
+    [#"UBIGINT"      :type/BigInteger]  ; ineffective
     [#"INT8"         :type/BigInteger]
     [#"LONG"         :type/BigInteger]
     [#"INT"          :type/Integer]
-    [#"INTEGER"      :type/Integer]
-    [#"INT4"         :type/Integer]
+    [#"INTEGER"      :type/Integer]     ; ineffective
+    [#"INT4"         :type/Integer]     ; ineffective
     [#"SIGNED"       :type/Integer]
-    [#"SMALLINT"     :type/Integer]
-    [#"INT2"         :type/Integer]
+    [#"SMALLINT"     :type/Integer]     ; ineffective
+    [#"INT2"         :type/Integer]     ; ineffective
     [#"SHORT"        :type/Integer]
-    [#"TINYINT"      :type/Integer]
-    [#"INT1"         :type/Integer]
-    [#"UINTEGER"     :type/Integer]
-    [#"USMALLINT"    :type/Integer]
-    [#"UTINYINT"     :type/Integer]
+    [#"TINYINT"      :type/Integer]     ; ineffective
+    [#"INT1"         :type/Integer]     ; ineffective
+    [#"UINTEGER"     :type/Integer]     ; ineffective
+    [#"USMALLINT"    :type/Integer]     ; ineffective
+    [#"UTINYINT"     :type/Integer]     ; ineffective
     [#"DECIMAL"      :type/Decimal]
     [#"DOUBLE"       :type/Float]
     [#"FLOAT8"       :type/Float]
@@ -89,20 +85,20 @@
     [#"FLOAT"        :type/Float]
     [#"VARCHAR"      :type/Text]
     [#"CHAR"         :type/Text]
-    [#"BPCHAR"       :type/Text]
+    [#"BPCHAR"       :type/Text]        ; ineffective
     [#"TEXT"         :type/Text]
     [#"STRING"       :type/Text]
     [#"BLOB"         :type/*]
     [#"BYTEA"        :type/*]
     [#"BINARY"       :type/*]
-    [#"VARBINARY"    :type/*]
+    [#"VARBINARY"    :type/*]           ; ineffective
     [#"UUID"         :type/UUID]
+    [#"TIMESTAMPTZ"  :type/DateTimeWithZoneOffset]
     [#"TIMESTAMP"    :type/DateTime]
     [#"DATETIME"     :type/DateTime]
-    [#"TIMESTAMPTZ"  :type/DateTimeWithZoneOffset]
-    [#"TIMESTAMP_S"  :type/DateTime]
-    [#"TIMESTAMP_MS" :type/DateTime]
-    [#"TIMESTAMP_NS" :type/DateTime]
+    [#"TIMESTAMP_S"  :type/DateTime]               ; ineffective
+    [#"TIMESTAMP_MS" :type/DateTime]               ; ineffective
+    [#"timestamp_NS" :type/DateTime]               ; ineffective
     [#"DATE"         :type/Date]
     [#"TIME"         :type/Time]]))
 
@@ -146,12 +142,12 @@
 (defmethod sql.qp/date [:duckdb :day-of-year]     [_ _ expr] [:dayofyear expr])
 
 (defmethod sql.qp/date [:duckdb :day-of-week]
-  [_ _ expr]
-  (sql.qp/adjust-day-of-week :duckdb [:dayofweek expr]))
+  [driver _ expr]
+  (sql.qp/adjust-day-of-week driver [:dayofweek expr]))
 
 (defmethod sql.qp/date [:duckdb :week]
-  [_ _ expr]
-  (sql.qp/adjust-start-of-week :duckdb (partial conj [:date_trunc] (h2x/literal :week)) expr))
+  [driver _ expr]
+  (sql.qp/adjust-start-of-week driver (partial conj [:date_trunc] (h2x/literal :week)) expr))
 
 (defmethod sql.qp/date [:duckdb :month]           [_ _ expr] [:date_trunc (h2x/literal :month) expr])
 (defmethod sql.qp/date [:duckdb :month-of-year]   [_ _ expr] [:month expr])
@@ -173,7 +169,7 @@
 
 ;; empty result set for queries without result (like insert...)
 
-(defn empty-rs [_] ;
+(defn empty-rs [] ;
   (reify
     ResultSet
     (getMetaData [_]
@@ -192,10 +188,10 @@
   [_driver ^Statement stmt ^String sql]
   (if (.execute stmt sql)
     (.getResultSet stmt)
-    (empty-rs [])))
+    (empty-rs)))
 
 (defmethod driver/describe-database :duckdb
-  [driver database] 
+  [driver database]
   (let [get_tables_query "select * from information_schema.tables"]
     {:tables
      (sql-jdbc.execute/do-with-connection-with-options
@@ -224,9 +220,9 @@
                                 [get_columns_query])]
                    (set
                     (for [[idx {column_name :column_name, data_type :data_type}] (m/indexed results)]
-                      {:name                  column_name
+                      {:name              column_name
                        :database-type     data_type
-                       :base-type         (sql-jdbc.sync/database-type->base-type :duckdb (keyword data_type))
+                       :base-type         (sql-jdbc.sync/database-type->base-type driver (keyword data_type))
                        :database-position idx})))))}))
 
 ;; The 0.4.0 DuckDB JDBC .getImportedKeys method throws 'not implemented' yet.
