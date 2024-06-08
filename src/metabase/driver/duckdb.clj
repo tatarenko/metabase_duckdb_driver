@@ -15,7 +15,8 @@
             ResultSet
             ResultSetMetaData
             Statement
-            Types]))
+            Types]
+           [java.time LocalDate LocalTime]))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -98,13 +99,29 @@
     [#"DATETIME"     :type/DateTime]
     [#"TIMESTAMP_S"  :type/DateTime]               ; ineffective
     [#"TIMESTAMP_MS" :type/DateTime]               ; ineffective
-    [#"timestamp_NS" :type/DateTime]               ; ineffective
+    [#"TIMESTAMP_NS" :type/DateTime]               ; ineffective
     [#"DATE"         :type/Date]
     [#"TIME"         :type/Time]]))
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
   (database-type->base-type field-type))
+
+
+(defmethod sql-jdbc.execute/set-parameter [:duckdb LocalDate]
+  [_ prepared-statement i t] 
+  (.setObject prepared-statement i (t/local-date-time t (t/local-time 0))))
+
+
+(defmethod sql-jdbc.execute/set-parameter [:duckdb LocalTime]
+  [_ prepared-statement i t]
+  (.setObject prepared-statement i (t/local-date-time t (t/local-time 0))))
+
+
+(defmethod sql-jdbc.execute/set-parameter [:duckdb String]
+  [_ prepared-statement i t] 
+  (.setObject prepared-statement i t))
+
 
 ;; .getObject of DuckDB (v0.4.0) does't handle the java.time.LocalDate but sql.Date only,
 ;; so get the sql.Date from DuckDB and convert it to java.time.LocalDate
@@ -157,7 +174,7 @@
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
-  [:from_unixtime expr])
+  [:make_timestamp [:bigint expr]])
 
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
 ;; DuckDB JDBC implementation.

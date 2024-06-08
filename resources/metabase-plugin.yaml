@@ -13,7 +13,7 @@ driver:
   connection-properties:
     - name: database_file
       display-name: Database file
-      placeholder: /home/you/the.duckdb (or empty for 'in memory' mode)
+      placeholder: /home/to/the.duckdb (or ':memory:' for 'in memory' mode)
       required: false
     - name: read_only
       display-name: Establish a read-only connection
