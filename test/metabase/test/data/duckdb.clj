@@ -2,11 +2,8 @@
   (:require
    [clojure.edn :as edn]
    [clojure.java.io :as io]
-   [clojure.string :as str]
-   [metabase.config :as config]
+   [clojure.string :as str] 
    [metabase.driver :as driver]
-   [metabase.driver.ddl.interface :as ddl.i]
-   [metabase.driver.sql.util :as sql.u]
    [metabase.test.data.interface :as tx]
    [metabase.test.data.sql :as sql.tx]
    [metabase.test.data.sql-jdbc :as sql-jdbc.tx]
@@ -26,18 +23,14 @@
 
 
 
-(def db-connection-details
-  (delay {:read_only       false
-          :old_implicit_casting   true
-          "temp_directory"         "metabase_test.ddb.tmp"
-          :database_file           "metabase_test.ddb"
-          "custom_user_agent"      "metabase_test"
-          :allow_unsigned_extensions  false
-          :subname                 "metabase_test.ddb"}))
-
-(defmethod tx/dbdef->connection-details :duckdb
-  [& _]
-  @db-connection-details)
+(defmethod tx/dbdef->connection-details :duckdb [_ _ {:keys [database-name]}] 
+  {:read_only       false
+   :old_implicit_casting   true
+   "temp_directory"        (format "%s.ddb.tmp" database-name)
+   :database_file (format "%s.ddb" database-name)
+   "custom_user_agent"     "metabase_test"
+   :allow_unsigned_extensions  false
+   :subname                (format "%s.ddb" database-name)})
 
 (doseq [[base-type db-type] {:type/BigInteger     "BIGINT"
                              :type/Boolean        "BOOL"
@@ -52,17 +45,10 @@
                              :type/UUID           "UUID"}]
   (defmethod sql.tx/field-base-type->sql-type [:duckdb base-type] [_ _] db-type))
 
-;; (defmethod tx/create-db! :duckdb
-;;   [_driver dbdef]
-;;   (tx/destroy-db! _driver dbdef)
-;;   (apply (get-method tx/create-db! :sql-jdbc/test-extensions) _driver dbdef))
-
-
 (defmethod tx/destroy-db! :duckdb
   [_driver dbdef]
   (let [file (io/file (str (tx/escaped-database-name dbdef) ".ddb"))
-        wal-file (io/file (str (tx/escaped-database-name dbdef) ".ddb.wal"))]
-    (log/infof "LOUISAAAAAA Destroying DuckDB database %s" (tx/escaped-database-name dbdef))
+        wal-file (io/file (str (tx/escaped-database-name dbdef) ".ddb.wal"))] 
     (when (.exists file)
       (.delete file))
     (when (.exists wal-file)
@@ -71,9 +57,10 @@
 
 (defmethod sql.tx/pk-sql-type :duckdb [_] "INTEGER")
 
-(defmethod sql.tx/drop-db-if-exists-sql :duckdb [_ {:keys [database-name]}] (format "DETACH '%s';" database-name))
-(defmethod sql.tx/create-db-sql         :duckdb [_ {:keys [database-name]}]
-  (format "ATTACH '%s.ddb';" database-name))
+(defmethod sql.tx/drop-db-if-exists-sql    :duckdb [& _] nil)
+(defmethod ddl/drop-db-ddl-statements   :duckdb [& _] nil)
+(defmethod sql.tx/create-db-sql         :duckdb [& _] nil)
+
 
 (defmethod sql.tx/add-fk-sql            :duckdb [& _] nil)
 
@@ -92,7 +79,14 @@
   false)
 
 (defmethod tx/create-db! :duckdb
-  [driver {:keys [table-definitions] :as dbdef} & options]
+  [driver {:keys [table-definitions] :as dbdef} & options] 
+  
+  (try 
+    (doseq [statement (apply ddl/drop-db-ddl-statements driver dbdef options)]
+      (execute/execute-sql! driver :server dbdef statement))
+    (catch Throwable e
+      (log/infof "Error dropping DB: %s" (ex-message e))))
+  
   (tx/destroy-db! driver dbdef)
   ;; now execute statements to create the DB
   (doseq [statement (ddl/create-db-ddl-statements driver dbdef)]
@@ -116,16 +110,3 @@
                                    {:driver driver, :tabledef (update tabledef :rows (fn [rows]
                                                                                        (concat (take 10 rows) ['...])))}
                                    e)))))))
-
-;; (defmethod sql.tx/create-table-sql :duckdb
-;;   [driver {:keys [database-name]} {:keys [table-name field-definitions]}]
-;;   (let [quote-name #(sql.u/quote-name driver :field (ddl.i/format-name driver %))]
-;;     (format "CREATE TABLE %s (%s)"
-;;             (sql.tx/qualify-and-quote driver database-name table-name)
-;;             (->> field-definitions
-;;                  (map (fn [{:keys [field-name base-type]}]
-;;                         (format "%s %s" (quote-name field-name) (if (map? base-type)
-;;                                                                   (:native base-type)
-;;                                                                   (sql.tx/field-base-type->sql-type driver base-type)))))
-;;                  (interpose ", ")
-;;                  (apply str)))))

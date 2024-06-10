@@ -15,6 +15,7 @@
             ResultSet
             ResultSetMetaData
             Statement
+            Time
             Types]
            [java.time LocalDate LocalTime]))
 
@@ -115,7 +116,7 @@
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalTime]
   [_ prepared-statement i t]
-  (.setObject prepared-statement i (t/local-date-time t (t/local-time 0))))
+  (.setObject prepared-statement i (Time/valueOf t)))
 
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb String]
