@@ -2,7 +2,8 @@
   (:require
    [clojure.edn :as edn]
    [clojure.java.io :as io]
-   [clojure.string :as str] 
+   [clojure.string :as str]
+   [metabase.config :as config]
    [metabase.driver :as driver]
    [metabase.test.data.interface :as tx]
    [metabase.test.data.sql :as sql.tx]
@@ -17,11 +18,11 @@
 
 (sql-jdbc.tx/add-test-extensions! :duckdb)
 
-(defmethod driver/database-supports? [:duckdb :foreign-keys] [_driver _feature _db] )
-;; (doseq [[feature supported?] {:foreign-keys  (not config/is-test?)}]
-;;   (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
+(doseq [[feature supported?] {:foreign-keys  (not config/is-test?) 
+                              :upload-with-auto-pk (not config/is-test?)}]
+  (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
 
-
+(defmethod tx/supports-time-type? :duckdb [_driver] false)
 
 (defmethod tx/dbdef->connection-details :duckdb [_ _ {:keys [database-name]}] 
   {:read_only       false
@@ -45,21 +46,21 @@
                              :type/UUID           "UUID"}]
   (defmethod sql.tx/field-base-type->sql-type [:duckdb base-type] [_ _] db-type))
 
-(defmethod tx/destroy-db! :duckdb
-  [_driver dbdef]
-  (let [file (io/file (str (tx/escaped-database-name dbdef) ".ddb"))
-        wal-file (io/file (str (tx/escaped-database-name dbdef) ".ddb.wal"))] 
-    (when (.exists file)
-      (.delete file))
-    (when (.exists wal-file)
-      (.delete wal-file))
-    ))
 
 (defmethod sql.tx/pk-sql-type :duckdb [_] "INTEGER")
 
 (defmethod sql.tx/drop-db-if-exists-sql    :duckdb [& _] nil)
 (defmethod ddl/drop-db-ddl-statements   :duckdb [& _] nil)
 (defmethod sql.tx/create-db-sql         :duckdb [& _] nil)
+
+(defmethod tx/destroy-db! :duckdb
+  [_driver dbdef]
+  (let [file (io/file (str (tx/escaped-database-name dbdef) ".ddb"))
+        wal-file (io/file (str (tx/escaped-database-name dbdef) ".ddb.wal"))]
+    (when (.exists file)
+      (.delete file))
+    (when (.exists wal-file)
+      (.delete wal-file))))
 
 
 (defmethod sql.tx/add-fk-sql            :duckdb [& _] nil)
@@ -71,16 +72,12 @@
   (delay (edn/read-string (slurp "test_resources/load-durations.edn"))))
 
 
-(defmethod execute/execute-sql! :sqlite [& args]
-  (apply execute/sequentially-execute-sql! args))
-
 (defmethod tx/sorts-nil-first? :duckdb
   [_driver _base-type]
   false)
 
 (defmethod tx/create-db! :duckdb
   [driver {:keys [table-definitions] :as dbdef} & options] 
-  
   (try 
     (doseq [statement (apply ddl/drop-db-ddl-statements driver dbdef options)]
       (execute/execute-sql! driver :server dbdef statement))

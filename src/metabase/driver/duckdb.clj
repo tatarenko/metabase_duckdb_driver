@@ -17,7 +17,9 @@
             Statement
             Time
             Types]
-           [java.time LocalDate LocalTime]))
+           [java.time LocalDate LocalTime OffsetTime]
+           [java.time.temporal ChronoField]
+           ))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -39,8 +41,7 @@
          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
          {"motherduck_token" motherduck_token}))
-      
-      (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token)
+      (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token :motherduck_token-value)
       sql-jdbc.common/handle-additional-options))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
@@ -48,13 +49,11 @@
   (-> details-map 
       (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token") 
                                         secret/value->string) 
-                                    (secret/get-secret-string details-map "motherduck_token"))}) 
-      (select-keys [:database_file :read_only :allow_unsigned_extensions :motherduck_token :old_implicit_casting])
+                                    (secret/get-secret-string details-map "motherduck_token"))})
       jdbc-spec))
 
-(defmethod sql.qp/honey-sql-version :duckdb
-           [_driver]
-           2)
+(defmethod sql-jdbc.execute/set-timezone-sql :duckdb [_]
+  "SET GLOBAL TimeZone=%s;")
 
 (def ^:private database-type->base-type 
   (sql-jdbc.sync/pattern-based-database-type->base-type 
@@ -95,7 +94,7 @@
     [#"BINARY"       :type/*]
     [#"VARBINARY"    :type/*]           ; ineffective
     [#"UUID"         :type/UUID]
-    [#"TIMESTAMPTZ"  :type/DateTimeWithZoneOffset]
+    [#"TIMESTAMPTZ"  :type/DateTimeWithTZ]
     [#"TIMESTAMP"    :type/DateTime]
     [#"DATETIME"     :type/DateTime]
     [#"TIMESTAMP_S"  :type/DateTime]               ; ineffective
@@ -109,15 +108,25 @@
   (database-type->base-type field-type))
 
 
+(defn- local-time-to-time [lt]
+  (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
+
+(defn- time-to-local-time [t]
+  (let [date-time (.getTime t)]
+    (LocalTime/ofNanoOfDay (* 1000000 date-time))))
+
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalDate]
   [_ prepared-statement i t] 
   (.setObject prepared-statement i (t/local-date-time t (t/local-time 0))))
 
-
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalTime]
   [_ prepared-statement i t]
-  (.setObject prepared-statement i (Time/valueOf t)))
+  (.setObject prepared-statement i (local-time-to-time t)))
 
+(defmethod sql-jdbc.execute/set-parameter [:duckdb OffsetTime]
+  [_ prepared-statement i t] 
+  (let [adjusted-tz  (local-time-to-time (.toLocalTime (t/with-offset-same-instant t (t/zone-offset 0))))] 
+    (.setObject prepared-statement i adjusted-tz)))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb String]
   [_ prepared-statement i t] 
@@ -137,11 +146,18 @@
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIME]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
-    (when-let [sqlTime (.getTime rs i)]
-      (.toLocalTime sqlTime))))
+    (when-let [sqlTimeStamp (.getTime rs i)]
+      (time-to-local-time sqlTimeStamp))))
+
+;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
+;; DuckDB JDBC implementation.
+(defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIMESTAMP]
+   [_ ^ResultSet rs _ ^Integer i]
+    (fn []
+     (when-let [t (.getTimestamp rs i)]
+       (t/local-date-time t))))
 
 ;; date processing for aggregation
-
 (defmethod driver/db-start-of-week :duckdb [_] :monday)
 
 (defmethod sql.qp/add-interval-honeysql-form :duckdb
@@ -161,7 +177,7 @@
 
 (defmethod sql.qp/date [:duckdb :day-of-week]
   [driver _ expr]
-  (sql.qp/adjust-day-of-week driver [:dayofweek expr]))
+  (sql.qp/adjust-day-of-week driver [:isodow expr]))
 
 (defmethod sql.qp/date [:duckdb :week]
   [driver _ expr]
@@ -175,19 +191,14 @@
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
-  [:make_timestamp [:bigint expr]])
+  [:make_timestamp (h2x/cast :DOUBLE expr)])
 
-;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
-;; DuckDB JDBC implementation.
-(defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIMESTAMP]
-   [_ ^ResultSet rs _ ^Integer i]
-    (fn []
-     (when-let [t (.getTimestamp rs i)]
-       (t/zoned-date-time (t/local-date-time t) (t/zone-id "UTC")))))
+(defmethod sql.qp/->honeysql [:duckdb :regex-match-first]
+  [driver [_ arg pattern]]
+  [:regexp_extract (sql.qp/->honeysql driver arg) (sql.qp/->honeysql driver pattern) 0])
 
 ;; empty result set for queries without result (like insert...)
-
-(defn empty-rs [] ;
+(defn- empty-rs []
   (reify
     ResultSet
     (getMetaData [_]
@@ -202,7 +213,7 @@
 
 ;; override native execute-statement! to make queries that does't returns ResultSet
 
-(defmethod sql-jdbc.execute/execute-statement! :sql-jdbc
+(defmethod sql-jdbc.execute/execute-statement! :duckdb
   [_driver ^Statement stmt ^String sql]
   (if (.execute stmt sql)
     (.getResultSet stmt)
