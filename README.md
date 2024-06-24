@@ -1,12 +1,8 @@
-# Metabase DuckDB Driver (Community-Supported)
+# Metabase DuckDB Driver
 
-The Metabase DuckDB allows Metabase SNAPSHOT to use embedded DuckDB database.
+The Metabase DuckDB driver allows [Metabase](https://www.metabase.com/) ([GitHub](https://github.com/metabase/metabase)) to use the embedded [DuckDB](https://duckdb.org/) ([GitHub](https://github.com/duckdb/duckdb)) database.
 
-This driver is community driver and is not considered part of the
-core Metabase project. If you would like to open a GitHub issue to
-report a bug or request new features, or would like to open a pull
-requests against it, please do so in this repository, and not in the
-core Metabase GitHub repository.
+This driver is supported by [MotherDuck](https://motherduck.com/). If you would like to open a GitHub issue to report a bug or request new features, or would like to open a pull requests against it, please do so in this repository, and not in the core Metabase GitHub repository.
 
 ## DuckDB
 
@@ -46,11 +42,11 @@ If you are running the Docker image or you want to use another directory for plu
 
 ## Configuring
 
-Once you've started up Metabase, go to add a database and select "DuckDB". Provide the path to the DuckDB database file. if you don't specify a path DuckDB will be started in memory mode without any data at all.
+Once you've started up Metabase, go to add a database and select "DuckDB". Provide the path to the DuckDB database file. To use DuckDB in the in-memory mode without any database file, you can specify `:memory:` as the database path. 
 
 ## Parquet
 
-Does it make sense to start DuckDB Database in memory mode without any data in system like Metabase? Of Course yes!
+Does it make sense to start DuckDB Database in-memory mode without any data in system like Metabase? Of Course yes!
 Because of feature of DuckDB allowing you [to run SQL queries directly on Parquet files](https://duckdb.org/2021/06/25/querying-parquet.html). So, you don't need a DuckDB database.
 
 For example (somewhere in Metabase SQL Query editor):
