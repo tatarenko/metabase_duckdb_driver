@@ -1,5 +1,6 @@
 (ns metabase.driver.duckdb
   (:require [clojure.java.jdbc :as jdbc]
+            [clojure.string :as str]
             [java-time.api :as t]
             [medley.core :as m]
             [metabase.driver :as driver]
@@ -18,31 +19,35 @@
             Time
             Types]
            [java.time LocalDate LocalTime OffsetTime]
-           [java.time.temporal ChronoField]
-           ))
+           [java.time.temporal ChronoField]))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}] 
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}]
   (-> details 
       (merge
        {:classname         "org.duckdb.DuckDBDriver"
         :subprotocol       "duckdb"
         :subname           (or database_file "")
         "duckdb.read_only" (str read_only) 
-        "allow_unsigned_extensions" (str allow_unsigned_extensions)
         "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
-        "old_implicit_casting" (str old_implicit_casting)
         "jdbc_stream_results" "true"}
+       (when old_implicit_casting
+         {"old_implicit_casting" (str old_implicit_casting)})
+       (when allow_unsigned_extensions
+        {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
        (when (seq (re-find #"^md:" database_file)) 
          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
          {"motherduck_token" motherduck_token}))
-      (dissoc details :database_file :read_only :allow_unsigned_extensions :port :engine :motherduck_token :motherduck_token-value)
+      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token) 
       sql-jdbc.common/handle-additional-options))
+
+(defn- remove-keys-with-prefix [details prefix]
+  (apply dissoc details (filter #(str/starts-with? (name %) prefix) (keys details))))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
@@ -50,6 +55,7 @@
       (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token") 
                                         secret/value->string) 
                                     (secret/get-secret-string details-map "motherduck_token"))})
+      (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
 (defmethod sql-jdbc.execute/set-timezone-sql :duckdb [_]
