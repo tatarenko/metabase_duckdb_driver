@@ -197,7 +197,7 @@
 
 (defmethod sql.qp/unix-timestamp->honeysql [:duckdb :seconds]
   [_ _ expr]
-  [:make_timestamp (h2x/cast :DOUBLE expr)])
+  [:to_timestamp (h2x/cast :DOUBLE expr)])
 
 (defmethod sql.qp/->honeysql [:duckdb :regex-match-first]
   [driver [_ arg pattern]]
