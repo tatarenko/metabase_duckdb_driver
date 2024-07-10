@@ -1,25 +1,23 @@
 (ns metabase.driver.duckdb
-  (:require [clojure.java.jdbc :as jdbc]
-            [clojure.string :as str]
-            [java-time.api :as t]
-            [medley.core :as m]
-            [metabase.driver :as driver]
-            [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
-            [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
-            [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
-            [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-            [metabase.driver.sql.query-processor :as sql.qp]
-            [metabase.models.secret :as secret]
-            [metabase.public-settings.premium-features :as premium-features]
-            [metabase.util.honey-sql-2 :as h2x])
-  (:import [java.sql
-            ResultSet
-            ResultSetMetaData
-            Statement
-            Time
-            Types]
-           [java.time LocalDate LocalTime OffsetTime]
-           [java.time.temporal ChronoField]))
+  (:require 
+   [clojure.java.jdbc :as jdbc]
+   [clojure.string :as str] 
+   [java-time.api :as t] 
+   [medley.core :as m] 
+   [metabase.driver :as driver] 
+   [metabase.driver.sql-jdbc.common :as sql-jdbc.common] 
+   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn] 
+   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute] 
+   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync] 
+   [metabase.driver.sql.query-processor :as sql.qp] 
+   [metabase.models.secret :as secret] 
+   [metabase.public-settings.premium-features :as premium-features] 
+   [metabase.util.honey-sql-2 :as h2x])
+  (:import 
+   (java.sql PreparedStatement ResultSet ResultSetMetaData Statement Time Types)
+   (java.time LocalDate LocalTime OffsetTime)))
+
+(set! *warn-on-reflection* true)
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -67,22 +65,22 @@
     [#"BOOL"         :type/Boolean]
     [#"LOGICAL"      :type/Boolean]
     [#"HUGEINT"      :type/BigInteger]
+    [#"UBIGINT"      :type/BigInteger]
     [#"BIGINT"       :type/BigInteger]
-    [#"UBIGINT"      :type/BigInteger]  ; ineffective
     [#"INT8"         :type/BigInteger]
     [#"LONG"         :type/BigInteger]
-    [#"INT"          :type/Integer]
-    [#"INTEGER"      :type/Integer]     ; ineffective
-    [#"INT4"         :type/Integer]     ; ineffective
+    [#"INT4"         :type/Integer]
     [#"SIGNED"       :type/Integer]
-    [#"SMALLINT"     :type/Integer]     ; ineffective
-    [#"INT2"         :type/Integer]     ; ineffective
+    [#"INT2"         :type/Integer]
     [#"SHORT"        :type/Integer]
-    [#"TINYINT"      :type/Integer]     ; ineffective
-    [#"INT1"         :type/Integer]     ; ineffective
-    [#"UINTEGER"     :type/Integer]     ; ineffective
-    [#"USMALLINT"    :type/Integer]     ; ineffective
-    [#"UTINYINT"     :type/Integer]     ; ineffective
+    [#"INT1"         :type/Integer]
+    [#"UINTEGER"     :type/Integer]
+    [#"USMALLINT"    :type/Integer]
+    [#"UTINYINT"     :type/Integer]
+    [#"INTEGER"      :type/Integer]
+    [#"SMALLINT"     :type/Integer]
+    [#"TINYINT"      :type/Integer]
+    [#"INT"          :type/Integer]
     [#"DECIMAL"      :type/Decimal]
     [#"DOUBLE"       :type/Float]
     [#"FLOAT8"       :type/Float]
@@ -91,21 +89,21 @@
     [#"FLOAT4"       :type/Float]
     [#"FLOAT"        :type/Float]
     [#"VARCHAR"      :type/Text]
+    [#"BPCHAR"       :type/Text]
     [#"CHAR"         :type/Text]
-    [#"BPCHAR"       :type/Text]        ; ineffective
     [#"TEXT"         :type/Text]
     [#"STRING"       :type/Text]
     [#"BLOB"         :type/*]
     [#"BYTEA"        :type/*]
+    [#"VARBINARY"    :type/*]
     [#"BINARY"       :type/*]
-    [#"VARBINARY"    :type/*]           ; ineffective
     [#"UUID"         :type/UUID]
     [#"TIMESTAMPTZ"  :type/DateTimeWithTZ]
-    [#"TIMESTAMP"    :type/DateTime]
     [#"DATETIME"     :type/DateTime]
-    [#"TIMESTAMP_S"  :type/DateTime]               ; ineffective
-    [#"TIMESTAMP_MS" :type/DateTime]               ; ineffective
-    [#"TIMESTAMP_NS" :type/DateTime]               ; ineffective
+    [#"TIMESTAMP_S"  :type/DateTime]
+    [#"TIMESTAMP_MS" :type/DateTime]
+    [#"TIMESTAMP_NS" :type/DateTime]
+    [#"TIMESTAMP"    :type/DateTime]
     [#"DATE"         :type/Date]
     [#"TIME"         :type/Time]]))
 
@@ -114,28 +112,27 @@
   (database-type->base-type field-type))
 
 
-(defn- local-time-to-time [lt]
-  (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
+(defn- local-time-to-time [^LocalTime lt]
+  (Time/valueOf lt))
 
-(defn- time-to-local-time [t]
-  (let [date-time (.getTime t)]
-    (LocalTime/ofNanoOfDay (* 1000000 date-time))))
+(defn- time-to-local-time [^Time t]
+  (.toLocalTime t))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalDate]
-  [_ prepared-statement i t] 
+  [_ ^PreparedStatement prepared-statement i t]
   (.setObject prepared-statement i (t/local-date-time t (t/local-time 0))))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalTime]
-  [_ prepared-statement i t]
+  [_ ^PreparedStatement prepared-statement i t]
   (.setObject prepared-statement i (local-time-to-time t)))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb OffsetTime]
-  [_ prepared-statement i t] 
-  (let [adjusted-tz  (local-time-to-time (.toLocalTime (t/with-offset-same-instant t (t/zone-offset 0))))] 
+  [_ ^PreparedStatement prepared-statement i ^OffsetTime t]
+  (let [adjusted-tz  (local-time-to-time (t/local-time (t/with-offset-same-instant t (t/zone-offset 0))))]
     (.setObject prepared-statement i adjusted-tz)))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb String]
-  [_ prepared-statement i t] 
+  [_ ^PreparedStatement prepared-statement i t]
   (.setObject prepared-statement i t))
 
 
@@ -152,10 +149,10 @@
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIME]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
-    (when-let [sqlTimeStamp (.getTime rs i)]
-      (time-to-local-time sqlTimeStamp))))
+    (when-let [sql-time (.getTime rs i)]
+      (time-to-local-time sql-time))))
 
-;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on 
+;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on
 ;; DuckDB JDBC implementation.
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIMESTAMP]
    [_ ^ResultSet rs _ ^Integer i]
@@ -264,4 +261,4 @@
 ;; There is no support of FK yet.
 (defmethod driver/describe-table-fks :duckdb
   [_ _ _]
-  (set #{}))
+  nil)
