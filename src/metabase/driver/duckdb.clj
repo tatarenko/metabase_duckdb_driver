@@ -99,6 +99,7 @@
     [#"BINARY"       :type/*]
     [#"UUID"         :type/UUID]
     [#"TIMESTAMPTZ"  :type/DateTimeWithTZ]
+    [#"TIMESTAMP WITH TIME ZONE" :type/DateTimeWithTZ]
     [#"DATETIME"     :type/DateTime]
     [#"TIMESTAMP_S"  :type/DateTime]
     [#"TIMESTAMP_MS" :type/DateTime]
