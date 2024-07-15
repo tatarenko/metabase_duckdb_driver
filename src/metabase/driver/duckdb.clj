@@ -1,7 +1,7 @@
 (ns metabase.driver.duckdb
   (:require 
    [clojure.java.jdbc :as jdbc]
-   [clojure.string :as str] 
+   [clojure.string :as str]
    [java-time.api :as t] 
    [medley.core :as m] 
    [metabase.driver :as driver] 
@@ -11,11 +11,12 @@
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync] 
    [metabase.driver.sql.query-processor :as sql.qp] 
    [metabase.models.secret :as secret] 
-   [metabase.public-settings.premium-features :as premium-features] 
+   [metabase.public-settings.premium-features :as premium-features]
    [metabase.util.honey-sql-2 :as h2x])
   (:import 
    (java.sql PreparedStatement ResultSet ResultSetMetaData Statement Time Types)
-   (java.time LocalDate LocalTime OffsetTime)))
+   (java.time LocalDate LocalTime OffsetTime)
+   (java.time.temporal ChronoField)))
 
 (set! *warn-on-reflection* true)
 
@@ -114,10 +115,7 @@
 
 
 (defn- local-time-to-time [^LocalTime lt]
-  (Time/valueOf lt))
-
-(defn- time-to-local-time [^Time t]
-  (.toLocalTime t))
+  (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalDate]
   [_ ^PreparedStatement prepared-statement i t]
@@ -150,8 +148,8 @@
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIME]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
-    (when-let [sql-time (.getTime rs i)]
-      (time-to-local-time sql-time))))
+    (when-let [sql-time-string (.getString rs i)]
+      (LocalTime/parse sql-time-string))))
 
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on
 ;; DuckDB JDBC implementation.
