@@ -1,7 +1,7 @@
 (ns metabase.driver.duckdb
   (:require 
    [clojure.java.jdbc :as jdbc]
-   [clojure.string :as str] 
+   [clojure.string :as str]
    [java-time.api :as t] 
    [medley.core :as m] 
    [metabase.driver :as driver] 
@@ -11,11 +11,12 @@
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync] 
    [metabase.driver.sql.query-processor :as sql.qp] 
    [metabase.models.secret :as secret] 
-   [metabase.public-settings.premium-features :as premium-features] 
+   [metabase.public-settings.premium-features :as premium-features]
    [metabase.util.honey-sql-2 :as h2x])
   (:import 
    (java.sql PreparedStatement ResultSet ResultSetMetaData Statement Time Types)
-   (java.time LocalDate LocalTime OffsetTime)))
+   (java.time LocalDate LocalTime OffsetTime)
+   (java.time.temporal ChronoField)))
 
 (set! *warn-on-reflection* true)
 
@@ -61,51 +62,52 @@
 
 (def ^:private database-type->base-type 
   (sql-jdbc.sync/pattern-based-database-type->base-type 
-   [[#"BOOLEAN"      :type/Boolean]
-    [#"BOOL"         :type/Boolean]
-    [#"LOGICAL"      :type/Boolean]
-    [#"HUGEINT"      :type/BigInteger]
-    [#"UBIGINT"      :type/BigInteger]
-    [#"BIGINT"       :type/BigInteger]
-    [#"INT8"         :type/BigInteger]
-    [#"LONG"         :type/BigInteger]
-    [#"INT4"         :type/Integer]
-    [#"SIGNED"       :type/Integer]
-    [#"INT2"         :type/Integer]
-    [#"SHORT"        :type/Integer]
-    [#"INT1"         :type/Integer]
-    [#"UINTEGER"     :type/Integer]
-    [#"USMALLINT"    :type/Integer]
-    [#"UTINYINT"     :type/Integer]
-    [#"INTEGER"      :type/Integer]
-    [#"SMALLINT"     :type/Integer]
-    [#"TINYINT"      :type/Integer]
-    [#"INT"          :type/Integer]
-    [#"DECIMAL"      :type/Decimal]
-    [#"DOUBLE"       :type/Float]
-    [#"FLOAT8"       :type/Float]
-    [#"NUMERIC"      :type/Float]
-    [#"REAL"         :type/Float]
-    [#"FLOAT4"       :type/Float]
-    [#"FLOAT"        :type/Float]
-    [#"VARCHAR"      :type/Text]
-    [#"BPCHAR"       :type/Text]
-    [#"CHAR"         :type/Text]
-    [#"TEXT"         :type/Text]
-    [#"STRING"       :type/Text]
-    [#"BLOB"         :type/*]
-    [#"BYTEA"        :type/*]
-    [#"VARBINARY"    :type/*]
-    [#"BINARY"       :type/*]
-    [#"UUID"         :type/UUID]
-    [#"TIMESTAMPTZ"  :type/DateTimeWithTZ]
-    [#"DATETIME"     :type/DateTime]
-    [#"TIMESTAMP_S"  :type/DateTime]
-    [#"TIMESTAMP_MS" :type/DateTime]
-    [#"TIMESTAMP_NS" :type/DateTime]
-    [#"TIMESTAMP"    :type/DateTime]
-    [#"DATE"         :type/Date]
-    [#"TIME"         :type/Time]]))
+   [[#"BOOLEAN"                  :type/Boolean]
+    [#"BOOL"                     :type/Boolean]
+    [#"LOGICAL"                  :type/Boolean]
+    [#"HUGEINT"                  :type/BigInteger]
+    [#"UBIGINT"                  :type/BigInteger]
+    [#"BIGINT"                   :type/BigInteger]
+    [#"INT8"                     :type/BigInteger]
+    [#"LONG"                     :type/BigInteger]
+    [#"INT4"                     :type/Integer]
+    [#"SIGNED"                   :type/Integer]
+    [#"INT2"                     :type/Integer]
+    [#"SHORT"                    :type/Integer]
+    [#"INT1"                     :type/Integer]
+    [#"UINTEGER"                 :type/Integer]
+    [#"USMALLINT"                :type/Integer]
+    [#"UTINYINT"                 :type/Integer]
+    [#"INTEGER"                  :type/Integer]
+    [#"SMALLINT"                 :type/Integer]
+    [#"TINYINT"                  :type/Integer]
+    [#"INT"                      :type/Integer]
+    [#"DECIMAL"                  :type/Decimal]
+    [#"DOUBLE"                   :type/Float]
+    [#"FLOAT8"                   :type/Float]
+    [#"NUMERIC"                  :type/Float]
+    [#"REAL"                     :type/Float]
+    [#"FLOAT4"                   :type/Float]
+    [#"FLOAT"                    :type/Float]
+    [#"VARCHAR"                  :type/Text]
+    [#"BPCHAR"                   :type/Text]
+    [#"CHAR"                     :type/Text]
+    [#"TEXT"                     :type/Text]
+    [#"STRING"                   :type/Text]
+    [#"BLOB"                     :type/*]
+    [#"BYTEA"                    :type/*]
+    [#"VARBINARY"                :type/*]
+    [#"BINARY"                   :type/*]
+    [#"UUID"                     :type/UUID]
+    [#"TIMESTAMPTZ"              :type/DateTimeWithTZ]
+    [#"TIMESTAMP WITH TIME ZONE" :type/DateTimeWithTZ]
+    [#"DATETIME"                 :type/DateTime]
+    [#"TIMESTAMP_S"              :type/DateTime]
+    [#"TIMESTAMP_MS"             :type/DateTime]
+    [#"TIMESTAMP_NS"             :type/DateTime]
+    [#"TIMESTAMP"                :type/DateTime]
+    [#"DATE"                     :type/Date]
+    [#"TIME"                     :type/Time]]))
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
@@ -113,10 +115,7 @@
 
 
 (defn- local-time-to-time [^LocalTime lt]
-  (Time/valueOf lt))
-
-(defn- time-to-local-time [^Time t]
-  (.toLocalTime t))
+  (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
 
 (defmethod sql-jdbc.execute/set-parameter [:duckdb LocalDate]
   [_ ^PreparedStatement prepared-statement i t]
@@ -149,8 +148,8 @@
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIME]
   [_ ^ResultSet rs _rsmeta ^Integer i]
   (fn []
-    (when-let [sql-time (.getTime rs i)]
-      (time-to-local-time sql-time))))
+    (when-let [sql-time-string (.getString rs i)]
+      (LocalTime/parse sql-time-string))))
 
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on
 ;; DuckDB JDBC implementation.
