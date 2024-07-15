@@ -166,7 +166,7 @@
   [driver hsql-form amount unit]
   (if (= unit :quarter)
     (recur driver hsql-form (* amount 3) :month)
-    (h2x/+ (h2x/->timestamp hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
+    (h2x/+ (h2x/->timestamp-with-time-zone hsql-form) [:raw (format "(INTERVAL '%d' %s)" (int amount) (name unit))])))
 
 (defmethod sql.qp/date [:duckdb :default]         [_ _ expr] expr)
 (defmethod sql.qp/date [:duckdb :minute]          [_ _ expr] [:date_trunc (h2x/literal :minute) expr])
