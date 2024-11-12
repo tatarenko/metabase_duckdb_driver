@@ -24,7 +24,7 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token], :as details}]
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}]
   (-> details 
       (merge
        {:classname         "org.duckdb.DuckDBDriver"
@@ -36,13 +36,17 @@
         "jdbc_stream_results" "true"}
        (when old_implicit_casting
          {"old_implicit_casting" (str old_implicit_casting)})
+       (when memory_limit
+         {"memory_limit" (str memory_limit)})
+        (when azure_transport_option_type
+          {"azure_transport_option_type" (str azure_transport_option_type)})
        (when allow_unsigned_extensions
         {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
        (when (seq (re-find #"^md:" database_file)) 
          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
          {"motherduck_token" motherduck_token}))
-      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token) 
+      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type) 
       sql-jdbc.common/handle-additional-options))
 
 (defn- remove-keys-with-prefix [details prefix]

@@ -27,6 +27,12 @@ driver:
       display-name: Allow loading unsigned extensions
       default: false
       type: boolean
+    - name: memory_limit
+      display-name: Limit on the amount of memory that DuckDB can use (e.g., 1GB), defaults to 80% of RAM
+      required: false
+    - name: azure_transport_option_type
+      display-name: Azure transport option type
+      required: false
     - name: motherduck_token
       display-name: Motherduck Token
       type: secret
