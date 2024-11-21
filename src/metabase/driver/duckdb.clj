@@ -225,7 +225,7 @@
     (.getResultSet stmt)
     (empty-rs)))
 
-(defn- is_motherduck_single_mode 
+(defn- is_motherduck
   [database_file]
   (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
 
@@ -241,7 +241,7 @@
                                ;; Additionally filter by db_name if connecting to MotherDuck, since
                                ;; multiple databases can be attached and information about the
                                ;; non-target database will be present in information_schema. 
-                                  (if (is_motherduck_single_mode database_file)
+                                  (if (is_motherduck database_file)
                                     (let [db_name (motherduck_db_name database_file)]
                                       (format "where table_catalog = '%s' " db_name))
                                     ""))]
@@ -267,7 +267,7 @@
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
                                   ;; non-target database will be present in information_schema. 
-                                  (if (is_motherduck_single_mode database_file)
+                                  (if (is_motherduck database_file)
                                     (let [db_name (motherduck_db_name database_file)]
                                       (format "and table_catalog = '%s' " db_name))
                                     ""))]
