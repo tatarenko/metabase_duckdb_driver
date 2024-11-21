@@ -264,8 +264,7 @@
                       {:name              column_name
                        :database-type     data_type
                        :base-type         (sql-jdbc.sync/database-type->base-type driver (keyword data_type))
-                       :database-position idx}
-                      )))))}))
+                       :database-position idx})))))}))
 
 ;; The 0.4.0 DuckDB JDBC .getImportedKeys method throws 'not implemented' yet.
 ;; There is no support of FK yet.
