@@ -231,9 +231,26 @@
     (.getResultSet stmt)
     (empty-rs)))
 
+(defn- is_motherduck
+  [database_file]
+  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
+
+(defn- motherduck_db_name
+  [database_file]
+  (subs database_file 3))
+
 (defmethod driver/describe-database :duckdb
   [driver database]
-  (let [get_tables_query "select * from information_schema.tables"]
+  (let 
+   [database_file (get (get database :details) :database_file)
+    get_tables_query (str "select * from information_schema.tables "
+                               ;; Additionally filter by db_name if connecting to MotherDuck, since
+                               ;; multiple databases can be attached and information about the
+                               ;; non-target database will be present in information_schema. 
+                                  (if (is_motherduck database_file)
+                                    (let [db_name (motherduck_db_name database_file)]
+                                      (format "where table_catalog = '%s' " db_name))
+                                    ""))]
     {:tables
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
@@ -248,9 +265,18 @@
 
 (defmethod driver/describe-table :duckdb
   [driver database {table_name :name, schema :schema}]
-  (let [get_columns_query (format 
-                           "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'" 
-                           table_name schema)] 
+  (let [database_file (get (get database :details) :database_file)
+               get_columns_query (str 
+                                  (format 
+                                   "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'" 
+                                   table_name schema) 
+                                  ;; Additionally filter by db_name if connecting to MotherDuck, since
+                                  ;; multiple databases can be attached and information about the
+                                  ;; non-target database will be present in information_schema. 
+                                  (if (is_motherduck database_file)
+                                    (let [db_name (motherduck_db_name database_file)]
+                                      (format "and table_catalog = '%s' " db_name))
+                                    ""))]
     {:name   table_name
      :schema schema
      :fields
