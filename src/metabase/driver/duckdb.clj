@@ -1,20 +1,26 @@
 (ns metabase.driver.duckdb
-  (:require 
+  (:require
    [clojure.java.jdbc :as jdbc]
    [clojure.string :as str]
-   [java-time.api :as t] 
-   [medley.core :as m] 
-   [metabase.driver :as driver] 
-   [metabase.driver.sql-jdbc.common :as sql-jdbc.common] 
-   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn] 
-   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute] 
-   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync] 
-   [metabase.driver.sql.query-processor :as sql.qp] 
-   [metabase.models.secret :as secret] 
+   [java-time.api :as t]
+   [medley.core :as m]
+   [metabase.driver :as driver]
+   [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
+   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
+   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
+   [metabase.driver.sql.query-processor :as sql.qp]
+   [metabase.models.secret :as secret]
    [metabase.public-settings.premium-features :as premium-features]
    [metabase.util.honey-sql-2 :as h2x])
-  (:import 
-   (java.sql PreparedStatement ResultSet ResultSetMetaData Statement Time Types)
+  (:import
+   (java.sql
+    PreparedStatement
+    ResultSet
+    ResultSetMetaData
+    Statement
+    Time
+    Types)
    (java.time LocalDate LocalTime OffsetTime)
    (java.time.temporal ChronoField)))
 
@@ -98,6 +104,7 @@
     [#"CHAR"                     :type/Text]
     [#"TEXT"                     :type/Text]
     [#"STRING"                   :type/Text]
+    [#"JSON"                     :type/JSON]
     [#"BLOB"                     :type/*]
     [#"BYTEA"                    :type/*]
     [#"VARBINARY"                :type/*]
@@ -116,7 +123,6 @@
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
   (database-type->base-type field-type))
-
 
 (defn- local-time-to-time [^LocalTime lt]
   (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
