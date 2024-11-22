@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-  
+
   workflow_dispatch:
 
 jobs:
@@ -47,6 +47,7 @@ jobs:
     - name: Build driver
       working-directory: ./metabase
       run: |
+        git apply ./modules/drivers/duckdb/ci/metabase_drivers_deps.patch
         chmod +x ./bin/build-driver.sh
         ./bin/build-driver.sh duckdb
         
