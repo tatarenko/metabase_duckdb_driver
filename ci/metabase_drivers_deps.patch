@@ -1,0 +1,12 @@
+diff --git a/modules/drivers/deps.edn b/modules/drivers/deps.edn
+index 0868e24de0..8d6c76a8ef 100644
+--- a/modules/drivers/deps.edn
++++ b/modules/drivers/deps.edn
+@@ -21,4 +21,6 @@
+   metabase/sparksql           {:local/root "sparksql"}
+   metabase/sqlite             {:local/root "sqlite"}
+   metabase/sqlserver          {:local/root "sqlserver"}
+-  metabase/vertica            {:local/root "vertica"}}}
++  metabase/vertica            {:local/root "vertica"}
++  metabase/duckdb             {:local/root "duckdb"}
++  }}
