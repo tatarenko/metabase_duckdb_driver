@@ -37,7 +37,7 @@
         :subprotocol       "duckdb"
         :subname           (or database_file "")
         "duckdb.read_only" (str read_only) 
-        "custom_user_agent" (str "metabase" (if premium-features/is-hosted? " metabase-cloud" ""))
+        "custom_user_agent" (str "metabase" (if (premium-features/is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
         "jdbc_stream_results" "true"}
        (when old_implicit_casting
