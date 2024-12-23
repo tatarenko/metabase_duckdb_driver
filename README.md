@@ -61,7 +61,7 @@ ORDER BY averageRating * numVotes DESC
 
 ## Docker
 
-Unfortunately, DuckDB plugin does't work in the default Alpine based Metabase docker container due to some glibc problems. But thanks to @ChrisH and @lucmartinon we have simple Dockerfile to create Docker image of Metabase based on Debian where the DuckDB plugin does work.
+Unfortunately, DuckDB plugin does't work in the default Alpine based Metabase docker container due to some glibc problems. But thanks to [@ChrisH](https://github.com/ChrisH) and [@lucmartinon](https://github.com/lucmartinon) we have simple Dockerfile to create Docker image of Metabase based on Debian where the DuckDB plugin does work.
 
 ```bash
 FROM openjdk:19-buster
@@ -151,4 +151,4 @@ vscode ➜ /workspaces/duckdb_plugin $ clojure -X:build:drivers:build/driver :dr
 
 ## Acknowledgement
 
-Thanks @AlexR2D2 for originally authoring this connector.
+Thanks [@AlexR2D2](https://github.com/AlexR2D2) for originally authoring this connector.
