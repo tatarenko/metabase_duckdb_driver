@@ -118,7 +118,9 @@
     [#"TIMESTAMP_NS"             :type/DateTime]
     [#"TIMESTAMP"                :type/DateTime]
     [#"DATE"                     :type/Date]
-    [#"TIME"                     :type/Time]]))
+    [#"TIME"                     :type/Time]
+    [#"GEOMETRY"                 :type/*]
+    ]))
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
