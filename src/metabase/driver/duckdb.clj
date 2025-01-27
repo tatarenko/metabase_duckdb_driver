@@ -11,7 +11,7 @@
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
    [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.models.secret :as secret]
-   [metabase.public-settings.premium-features :as premium-features]
+   [metabase.premium-features.core :as premium-features]
    [metabase.util.honey-sql-2 :as h2x])
   (:import
    (java.sql
@@ -61,9 +61,7 @@
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
   (-> details-map 
-      (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token") 
-                                        secret/value->string) 
-                                    (secret/get-secret-string details-map "motherduck_token"))})
+      (merge {:motherduck_token (secret/value-as-string :duckdb details-map "motherduck_token")})
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
