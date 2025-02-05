@@ -10,8 +10,6 @@
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
    [metabase.driver.sql.query-processor :as sql.qp]
-   [metabase.models.secret :as secret]
-   [metabase.premium-features.core :as premium-features]
    [metabase.util.honey-sql-2 :as h2x])
   (:import
    (java.sql
@@ -28,6 +26,34 @@
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
+(def premium-features-namespace
+  (try
+    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after 
+    'metabase.premium-features.core
+    (catch Exception _
+      (try
+        (require '[metabase.public-settings.premium-features :as premium-features])   ;; For Metabase < 0.52
+        'metabase.public-settings.premium-features
+        (catch Exception e
+          (throw (ex-info "Could not load either premium features namespace"
+                         {:error e})))))))
+
+
+(defn is-hosted?  []  
+  (let [premium-feature-ns (find-ns premium-features-namespace)]
+     ((ns-resolve premium-feature-ns 'is-hosted?))))
+
+(defn get-motherduck-token [details-map]
+  (try
+     ;; For Metabase 0.52 or after 
+     ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
+     (catch Exception _
+       ;; For Metabase < 0.52
+       (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
+                   ((requiring-resolve 'metabase.models.secret/value->string)))
+           ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
+
+
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
   [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}]
@@ -37,7 +63,7 @@
         :subprotocol       "duckdb"
         :subname           (or database_file "")
         "duckdb.read_only" (str read_only) 
-        "custom_user_agent" (str "metabase" (if (premium-features/is-hosted?) " metabase-cloud" ""))
+        "custom_user_agent" (str "metabase" (if (is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
         "jdbc_stream_results" "true"}
        (when old_implicit_casting
@@ -61,7 +87,7 @@
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
   (-> details-map 
-      (merge {:motherduck_token (secret/value-as-string :duckdb details-map "motherduck_token")})
+      (merge {:motherduck_token (get-motherduck-token details-map)})
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
