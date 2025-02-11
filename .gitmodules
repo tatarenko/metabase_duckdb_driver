@@ -1,0 +1,3 @@
+[submodule "duckdb-java"]
+	path = duckdb-java
+	url = https://github.com/hrl20/duckdb-java.git
