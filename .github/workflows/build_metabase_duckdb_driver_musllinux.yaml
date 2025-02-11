@@ -46,14 +46,6 @@ jobs:
         working-directory: duckdb-java
         run: make test
 
-      - name: Get Version
-        id: get_version
-        shell: bash
-        working-directory: duckdb-java
-        run: |
-          VERSION=v1.2.0
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - uses: actions/upload-artifact@v4
         with:
           name: java-linux-amd64-musl
@@ -111,7 +103,7 @@ jobs:
 
     - name: Install DuckDB JDBC Driver (Musllinux)
       run: |
-        VERSION=v1.2.0
+        VERSION=1.2.0
         mvn install:install-file \
           -Dfile=./jdbc-driver/duckdb_jdbc.jar \
           -DgroupId=org.duckdb \
