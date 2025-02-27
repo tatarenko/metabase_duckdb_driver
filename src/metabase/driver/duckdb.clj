@@ -1,20 +1,24 @@
 (ns metabase.driver.duckdb
-  (:require 
+  (:require
    [clojure.java.jdbc :as jdbc]
    [clojure.string :as str]
-   [java-time.api :as t] 
-   [medley.core :as m] 
-   [metabase.driver :as driver] 
-   [metabase.driver.sql-jdbc.common :as sql-jdbc.common] 
-   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn] 
-   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute] 
-   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync] 
-   [metabase.driver.sql.query-processor :as sql.qp] 
-   [metabase.models.secret :as secret] 
-   [metabase.public-settings.premium-features :as premium-features]
+   [java-time.api :as t]
+   [medley.core :as m]
+   [metabase.driver :as driver]
+   [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
+   [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
+   [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
+   [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
+   [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.util.honey-sql-2 :as h2x])
-  (:import 
-   (java.sql PreparedStatement ResultSet ResultSetMetaData Statement Time Types)
+  (:import
+   (java.sql
+    PreparedStatement
+    ResultSet
+    ResultSetMetaData
+    Statement
+    Time
+    Types)
    (java.time LocalDate LocalTime OffsetTime)
    (java.time.temporal ChronoField)))
 
@@ -22,26 +26,61 @@
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
+(def premium-features-namespace
+  (try
+    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after 
+    'metabase.premium-features.core
+    (catch Exception _
+      (try
+        (require '[metabase.public-settings.premium-features :as premium-features])   ;; For Metabase < 0.52
+        'metabase.public-settings.premium-features
+        (catch Exception e
+          (throw (ex-info "Could not load either premium features namespace"
+                         {:error e})))))))
+
+
+(defn is-hosted?  []  
+  (let [premium-feature-ns (find-ns premium-features-namespace)]
+     ((ns-resolve premium-feature-ns 'is-hosted?))))
+
+(defn get-motherduck-token [details-map]
+  (try
+     ;; For Metabase 0.52 or after 
+     ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
+     (catch Exception _
+       ;; For Metabase < 0.52
+       (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
+                   ((requiring-resolve 'metabase.models.secret/value->string)))
+           ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
+
+
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
   [{:keys [database_file, old_implicit_casting, motherduck_token], :as details}]
   (when (not (seq (re-find #"^md:" database_file))) 
-    (throw (ex-info "Metabase Cloud requires MotherDuck connection string, local duckdb file or in-memory connection not supported. " {:database_file database_file}))) 
+    (throw (ex-info "Metabase Cloud requires MotherDuck connection string, local duckdb file or in-memory connection not supported. " {:database_file database_file})))
   (-> details 
       (merge
        {:classname         "org.duckdb.DuckDBDriver"
         :subprotocol       "duckdb"
         :subname           (or database_file "")
-        "custom_user_agent" (str "metabase" (if (premium-features/is-hosted?) " metabase-cloud" ""))
+        "duckdb.read_only" (str read_only) 
+        "custom_user_agent" (str "metabase" (if (is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
         "jdbc_stream_results" "true"}
        (when old_implicit_casting
          {"old_implicit_casting" (str old_implicit_casting)})
-       {"motherduck_attach_mode"  "single"   ;; when connecting to MotherDuck, explicitly connect to a single database
-        "motherduck_saas_mode"    "true"}    ;; saas mode is required to limit what the DuckDB instance can do
+       (when memory_limit
+         {"memory_limit" (str memory_limit)})
+       (when azure_transport_option_type
+         {"azure_transport_option_type" (str azure_transport_option_type)})
+       (when allow_unsigned_extensions
+         {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
+       (when (seq (re-find #"^md:" database_file)) 
+         {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
          {"motherduck_token" motherduck_token}))
-      (dissoc :database_file :port :engine :old_implicit_casting :motherduck_token) 
+      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type) 
       sql-jdbc.common/handle-additional-options))
 
 (defn- remove-keys-with-prefix [details prefix]
@@ -50,9 +89,7 @@
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map] 
   (-> details-map 
-      (merge {:motherduck_token (or (-> (secret/db-details-prop->secret-map details-map "motherduck_token") 
-                                        secret/value->string) 
-                                    (secret/get-secret-string details-map "motherduck_token"))})
+      (merge {:motherduck_token (get-motherduck-token details-map)})
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
@@ -93,6 +130,7 @@
     [#"CHAR"                     :type/Text]
     [#"TEXT"                     :type/Text]
     [#"STRING"                   :type/Text]
+    [#"JSON"                     :type/JSON]
     [#"BLOB"                     :type/*]
     [#"BYTEA"                    :type/*]
     [#"VARBINARY"                :type/*]
@@ -106,12 +144,13 @@
     [#"TIMESTAMP_NS"             :type/DateTime]
     [#"TIMESTAMP"                :type/DateTime]
     [#"DATE"                     :type/Date]
-    [#"TIME"                     :type/Time]]))
+    [#"TIME"                     :type/Time]
+    [#"GEOMETRY"                 :type/*]
+    ]))
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
   (database-type->base-type field-type))
-
 
 (defn- local-time-to-time [^LocalTime lt]
   (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
@@ -220,9 +259,26 @@
     (.getResultSet stmt)
     (empty-rs)))
 
+(defn- is_motherduck
+  [database_file]
+  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
+
+(defn- motherduck_db_name
+  [database_file]
+  (subs database_file 3))
+
 (defmethod driver/describe-database :duckdb
   [driver database]
-  (let [get_tables_query "select * from information_schema.tables"]
+  (let 
+   [database_file (get (get database :details) :database_file)
+    get_tables_query (str "select * from information_schema.tables "
+                               ;; Additionally filter by db_name if connecting to MotherDuck, since
+                               ;; multiple databases can be attached and information about the
+                               ;; non-target database will be present in information_schema. 
+                                  (if (is_motherduck database_file)
+                                    (let [db_name (motherduck_db_name database_file)]
+                                      (format "where table_catalog = '%s' " db_name))
+                                    ""))]
     {:tables
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
@@ -237,9 +293,18 @@
 
 (defmethod driver/describe-table :duckdb
   [driver database {table_name :name, schema :schema}]
-  (let [get_columns_query (format 
-                           "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'" 
-                           table_name schema)] 
+  (let [database_file (get (get database :details) :database_file)
+               get_columns_query (str 
+                                  (format 
+                                   "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'" 
+                                   table_name schema) 
+                                  ;; Additionally filter by db_name if connecting to MotherDuck, since
+                                  ;; multiple databases can be attached and information about the
+                                  ;; non-target database will be present in information_schema. 
+                                  (if (is_motherduck database_file)
+                                    (let [db_name (motherduck_db_name database_file)]
+                                      (format "and table_catalog = '%s' " db_name))
+                                    ""))]
     {:name   table_name
      :schema schema
      :fields

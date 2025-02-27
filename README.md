@@ -61,20 +61,22 @@ ORDER BY averageRating * numVotes DESC
 
 ## Docker
 
-Unfortunately, DuckDB plugin does't work in the default Alpine based Metabase docker container due to some glibc problems. But thanks to @ChrisH and @lucmartinon we have simple Dockerfile to create Docker image of Metabase based on Debian where the DuckDB plugin does work.
+Unfortunately, DuckDB plugin does't work in the default Alpine based Metabase docker container due to some glibc problems. But thanks to [@ChrisH](https://github.com/ChrisH) and [@lucmartinon](https://github.com/lucmartinon) we have simple Dockerfile to create Docker image of Metabase based on Debian where the DuckDB plugin does work.
 
 ```bash
 FROM openjdk:19-buster
 
 ENV MB_PLUGINS_DIR=/home/plugins/
 
-ADD https://downloads.metabase.com/v0.46.2/metabase.jar /home
-ADD https://github.com/AlexR2D2/metabase_duckdb_driver/releases/download/0.1.6/duckdb.metabase-driver.jar /home/plugins/
+ADD https://downloads.metabase.com/v0.52.4/metabase.jar /home
+ADD https://github.com/MotherDuck-Open-Source/metabase_duckdb_driver/releases/download/0.2.12/duckdb.metabase-driver.jar /home/plugins/
 
 RUN chmod 744 /home/plugins/duckdb.metabase-driver.jar
 
 CMD ["java", "-jar", "/home/metabase.jar"]
 ```
+
+> Note: check that you are using the latest `metabase` and `duckdb.metabase-driver` versions. See [Where to find it](#where-to-find-it) section for versions details.
 
 Build the image:
 ```bash
@@ -149,4 +151,4 @@ vscode ➜ /workspaces/duckdb_plugin $ clojure -X:build:drivers:build/driver :dr
 
 ## Acknowledgement
 
-Thanks @AlexR2D2 for originally authoring this connector.
+Thanks [@AlexR2D2](https://github.com/AlexR2D2) for originally authoring this connector.
