@@ -1,10 +1,10 @@
 info:
   name: Metabase DuckDB Driver
-  version: 1.0.0-SNAPSHOT-0.1.13
+  version: 1.2.0
   description: Allows Metabase to connect to DuckDB databases.
 contact-info:
-  name: Alexander Golubov
-  address: golubov.ax@yandex.ru
+  name: MotherDuck Support
+  address: support@motherduck.com
 driver:
   name: duckdb
   display-name: MotherDuck
@@ -19,16 +19,6 @@ driver:
       display-name: Use DuckDB old_implicit_casting option
       default: true
       type: boolean
-    - name: allow_unsigned_extensions
-      display-name: Allow loading unsigned extensions
-      default: false
-      type: boolean
-    - name: memory_limit
-      display-name: Limit on the amount of memory that DuckDB can use (e.g., 1GB), defaults to 80% of RAM
-      required: false
-    - name: azure_transport_option_type
-      display-name: Azure transport option type
-      required: false
     - name: motherduck_token
       display-name: Motherduck Token
       type: secret
