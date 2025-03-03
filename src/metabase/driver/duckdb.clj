@@ -67,7 +67,8 @@
         "custom_user_agent" (str "metabase" (if (is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
         "jdbc_stream_results" "true"
-        "motherduck_saas_mode" "true"}
+        "motherduck_saas_mode" "true"
+        "memory_limit" "4GB"}
        (when old_implicit_casting
          {"old_implicit_casting" (str old_implicit_casting)})
        (when (seq (re-find #"^md:" database_file)) 
