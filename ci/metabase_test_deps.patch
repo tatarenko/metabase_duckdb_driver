@@ -1,0 +1,14 @@
+diff --git a/deps.edn b/deps.edn
+index 764376f2bf..93c5b496c6 100644
+--- a/deps.edn
++++ b/deps.edn
+@@ -432,7 +432,8 @@
+     "modules/drivers/sparksql/test"
+     "modules/drivers/sqlite/test"
+     "modules/drivers/sqlserver/test"
+-    "modules/drivers/vertica/test"]}
++    "modules/drivers/vertica/test"
++    "modules/drivers/duckdb/test"]}
+ 
+ ;;; Linters
+ 

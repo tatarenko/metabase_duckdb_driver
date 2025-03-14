@@ -51,6 +51,12 @@ jobs:
         chmod +x ./bin/build-driver.sh
         ./bin/build-driver.sh duckdb
         
+    - name: Run integration tests
+      working-directory: ./metabase
+      run: |
+        git apply ./modules/drivers/duckdb/ci/metabase_test_deps.patch
+        DRIVERS=duckdb clojure -X:dev:drivers:drivers-dev:ee:ee-dev:test
+        
     - name: Upload driver artifact
       uses: actions/upload-artifact@v4
       with:
