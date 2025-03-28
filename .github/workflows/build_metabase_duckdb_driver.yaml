@@ -55,6 +55,7 @@ jobs:
       working-directory: ./metabase
       run: |
         git apply ./modules/drivers/duckdb/ci/metabase_test_deps.patch
+        MB_EDITION=ee yarn build-static-viz
         DRIVERS=duckdb clojure -X:dev:drivers:drivers-dev:ee:ee-dev:test
         
     - name: Upload driver artifact
