@@ -20,8 +20,13 @@
 (doseq [[feature supported?] {:foreign-keys  (not config/is-test?)
                               :upload-with-auto-pk (not config/is-test?)
                               :test/time-type false
-                              ::describe-table-test/describe-materialized-view-fields false}]
+                              ::describe-table-test/describe-materialized-view-fields false
+                              :test/cannot-destroy-db true}]
   (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
+
+(defmethod tx/bad-connection-details :duckdb
+  [_driver]
+  {:unknown_config "single"})
 
 (defmethod tx/dbdef->connection-details :duckdb [_ _ {:keys [database-name]}]
   {:old_implicit_casting   true
