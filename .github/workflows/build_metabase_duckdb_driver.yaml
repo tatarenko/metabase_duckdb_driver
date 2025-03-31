@@ -53,6 +53,8 @@ jobs:
         
     - name: Run integration tests
       working-directory: ./metabase
+      env:
+          motherduck_token: ${{ secrets.motherduck_ci_user_token }}
       run: |
         git apply ./modules/drivers/duckdb/ci/metabase_test_deps.patch
         MB_EDITION=ee yarn build-static-viz
