@@ -90,15 +90,6 @@
   [driver {:keys [database-name]}]
   (format "CREATE DATABASE IF NOT EXISTS %s;" (qualify-and-quote driver database-name)))
 
-;; (defmethod tx/destroy-db! :duckdb
-;;   [_driver dbdef]
-;;   (let [file (io/file (str (tx/escaped-database-name dbdef) ".ddb"))
-;;         wal-file (io/file (str (tx/escaped-database-name dbdef) ".ddb.wal"))]
-;;     (when (.exists file)
-;;       (.delete file))
-;;     (when (.exists wal-file)
-;;       (.delete wal-file))))
-
 (defmethod sql.tx/add-fk-sql            :duckdb [& _] nil)
 
 (defmethod load-data/row-xform :duckdb
