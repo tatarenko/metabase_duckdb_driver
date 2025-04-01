@@ -56,36 +56,33 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}]
+  [{:keys [database_file, old_implicit_casting, motherduck_token], :as details}]
+  (when (not (seq (re-find #"^md:" database_file))) 
+    (throw (ex-info "Metabase Cloud requires MotherDuck connection string, local duckdb file or in-memory connection not supported. " {:database_file database_file})))
   (-> details 
       (merge
        {:classname         "org.duckdb.DuckDBDriver"
         :subprotocol       "duckdb"
-        :subname           (or database_file "")
-        "duckdb.read_only" (str read_only) 
+        :subname           (or database_file "") 
         "custom_user_agent" (str "metabase" (if (is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
-        "jdbc_stream_results" "true"}
+        "jdbc_stream_results" "true"
+        "motherduck_saas_mode" "true"
+        "memory_limit" "4GB"}
        (when old_implicit_casting
          {"old_implicit_casting" (str old_implicit_casting)})
-       (when memory_limit
-         {"memory_limit" (str memory_limit)})
-        (when azure_transport_option_type
-          {"azure_transport_option_type" (str azure_transport_option_type)})
-       (when allow_unsigned_extensions
-        {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
        (when (seq (re-find #"^md:" database_file)) 
          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
          {"motherduck_token" motherduck_token}))
-      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type) 
+      (dissoc :database_file :read_only :port :engine :old_implicit_casting :motherduck_token) 
       sql-jdbc.common/handle-additional-options))
 
 (defn- remove-keys-with-prefix [details prefix]
   (apply dissoc details (filter #(str/starts-with? (name %) prefix) (keys details))))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
-  [_ details-map]
+  [_ details-map] 
   (-> details-map 
       (merge {:motherduck_token (get-motherduck-token details-map)})
       (remove-keys-with-prefix "motherduck_token-")
