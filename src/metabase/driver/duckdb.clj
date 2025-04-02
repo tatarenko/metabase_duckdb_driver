@@ -300,8 +300,7 @@
 ;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb 
 ;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb 
 ;; instance to avoid deadlocks. 
-(defn- clone-raw-connection
-  [connection]
+(defn- clone-raw-connection [connection]
   (let [c3p0-conn (cast com.mchange.v2.c3p0.C3P0ProxyConnection connection)
         clone-method (.getMethod org.duckdb.DuckDBConnection "duplicate" (into-array Class []))
         raw-conn-token com.mchange.v2.c3p0.C3P0ProxyConnection/RAW_CONNECTION

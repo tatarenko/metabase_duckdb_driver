@@ -19,7 +19,7 @@
 
 (doseq [[feature supported?] {:upload-with-auto-pk (not config/is-test?)
                               :test/time-type false
-                              ::describe-table-test/describe-materialized-view-fields false
+                              ::describe-table-test/describe-materialized-view-fields false  ;; duckdb has no materialized views
                               :test/cannot-destroy-db true}]
   (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
 
