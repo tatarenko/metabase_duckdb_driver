@@ -38,6 +38,10 @@ driver:
       type: secret
       secret-kind: password
       required: false
+    - merge:
+        - additional-options
+        - name: additional-options
+          placeholder: ';http_keep_alive=false'
 
 init:
   - step: load-namespace

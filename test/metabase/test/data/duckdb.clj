@@ -17,8 +17,7 @@
 
 (sql-jdbc.tx/add-test-extensions! :duckdb)
 
-(doseq [[feature supported?] {:foreign-keys  (not config/is-test?)
-                              :upload-with-auto-pk (not config/is-test?)
+(doseq [[feature supported?] {:upload-with-auto-pk (not config/is-test?)
                               :test/time-type false
                               ::describe-table-test/describe-materialized-view-fields false
                               :test/cannot-destroy-db true}]
