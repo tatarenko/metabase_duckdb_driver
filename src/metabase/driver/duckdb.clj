@@ -10,9 +10,11 @@
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
    [metabase.driver.sql.query-processor :as sql.qp]
-   [metabase.util.honey-sql-2 :as h2x])
+   [metabase.util.honey-sql-2 :as h2x]
+   [metabase.util.log :as log])
   (:import
    (java.sql
+    Connection
     PreparedStatement
     ResultSet
     ResultSetMetaData
@@ -26,6 +28,15 @@
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
+(doseq [[feature supported?] {:metadata/key-constraints      false  ;; fetching metadata about foreign key constraints is not supported, but JOINs generally are.
+                              :upload-with-auto-pk           false}]
+  (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
+
+(defmethod sql-jdbc.conn/data-source-name :duckdb
+  [_driver details] 
+  ((some-fn :database_file)
+   details))
+
 (def premium-features-namespace
   (try
     (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after 
@@ -36,49 +47,48 @@
         'metabase.public-settings.premium-features
         (catch Exception e
           (throw (ex-info "Could not load either premium features namespace"
-                         {:error e})))))))
+                          {:error e})))))))
 
-
-(defn is-hosted?  []  
+(defn is-hosted?  []
   (let [premium-feature-ns (find-ns premium-features-namespace)]
-     ((ns-resolve premium-feature-ns 'is-hosted?))))
+    ((ns-resolve premium-feature-ns 'is-hosted?))))
 
 (defn get-motherduck-token [details-map]
   (try
      ;; For Metabase 0.52 or after 
-     ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
-     (catch Exception _
+    ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
+    (catch Exception _
        ;; For Metabase < 0.52
-       (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
-                   ((requiring-resolve 'metabase.models.secret/value->string)))
-           ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
-
+      (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
+              ((requiring-resolve 'metabase.models.secret/value->string)))
+          ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}]
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}] 
   (-> details 
       (merge
        {:classname         "org.duckdb.DuckDBDriver"
         :subprotocol       "duckdb"
         :subname           (or database_file "")
-        "duckdb.read_only" (str read_only) 
+        "duckdb.read_only" (str read_only)
         "custom_user_agent" (str "metabase" (if (is-hosted?) " metabase-cloud" ""))
         "temp_directory"   (str database_file ".tmp")
-        "jdbc_stream_results" "true"}
+        "jdbc_stream_results" "true"
+        :TimeZone  "UTC"}
        (when old_implicit_casting
          {"old_implicit_casting" (str old_implicit_casting)})
        (when memory_limit
          {"memory_limit" (str memory_limit)})
-        (when azure_transport_option_type
-          {"azure_transport_option_type" (str azure_transport_option_type)})
+       (when azure_transport_option_type
+         {"azure_transport_option_type" (str azure_transport_option_type)})
        (when allow_unsigned_extensions
-        {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
-       (when (seq (re-find #"^md:" database_file)) 
+         {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
+       (when (seq (re-find #"^md:" database_file))
          {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
        (when (seq motherduck_token)     ;; Only configure the option if token is provided
-         {"motherduck_token" motherduck_token}))
-      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type) 
+         {"motherduck_token" motherduck_token})) 
+      (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type)
       sql-jdbc.common/handle-additional-options))
 
 (defn- remove-keys-with-prefix [details prefix]
@@ -86,16 +96,35 @@
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
-  (-> details-map 
+  (-> details-map
       (merge {:motherduck_token (get-motherduck-token details-map)})
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
+(defmethod sql-jdbc.execute/do-with-connection-with-options :duckdb
+  [driver db-or-id-or-spec {:keys [^String session-timezone report-timezone] :as options} f]
+  ;; First use the parent implementation to get the connection with standard options
+  (sql-jdbc.execute/do-with-resolved-connection
+   driver
+   db-or-id-or-spec
+   options
+   (fn [^Connection conn]
+     ;; Additionally set timezone if provided and we're not in a recursive connection
+     (when (and (or report-timezone session-timezone) (not (sql-jdbc.execute/recursive-connection?)))
+       (let [timezone-to-use (or report-timezone session-timezone)]
+         (try
+           (with-open [stmt (.createStatement conn)]
+             (.execute stmt (format "SET TimeZone='%s';" timezone-to-use)))
+           (catch Throwable e
+             (log/debugf e "Error setting timezone '%s' for DuckDB database" timezone-to-use)))))
+     ;; Call the function with the configured connection
+     (f conn))))
+
 (defmethod sql-jdbc.execute/set-timezone-sql :duckdb [_]
   "SET GLOBAL TimeZone=%s;")
 
-(def ^:private database-type->base-type 
-  (sql-jdbc.sync/pattern-based-database-type->base-type 
+(def ^:private database-type->base-type
+  (sql-jdbc.sync/pattern-based-database-type->base-type
    [[#"BOOLEAN"                  :type/Boolean]
     [#"BOOL"                     :type/Boolean]
     [#"LOGICAL"                  :type/Boolean]
@@ -143,8 +172,7 @@
     [#"TIMESTAMP"                :type/DateTime]
     [#"DATE"                     :type/Date]
     [#"TIME"                     :type/Time]
-    [#"GEOMETRY"                 :type/*]
-    ]))
+    [#"GEOMETRY"                 :type/*]]))
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
@@ -170,7 +198,6 @@
   [_ ^PreparedStatement prepared-statement i t]
   (.setObject prepared-statement i t))
 
-
 ;; .getObject of DuckDB (v0.4.0) does't handle the java.time.LocalDate but sql.Date only,
 ;; so get the sql.Date from DuckDB and convert it to java.time.LocalDate
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/DATE]
@@ -190,10 +217,10 @@
 ;; override the sql-jdbc.execute/read-column-thunk for TIMESTAMP based on
 ;; DuckDB JDBC implementation.
 (defmethod sql-jdbc.execute/read-column-thunk [:duckdb Types/TIMESTAMP]
-   [_ ^ResultSet rs _ ^Integer i]
-    (fn []
-     (when-let [t (.getTimestamp rs i)]
-       (t/local-date-time t))))
+  [_ ^ResultSet rs _ ^Integer i]
+  (fn []
+    (when-let [t (.getTimestamp rs i)]
+      (t/local-date-time t))))
 
 ;; date processing for aggregation
 (defmethod driver/db-start-of-week :duckdb [_] :monday)
@@ -233,7 +260,7 @@
 
 (defmethod sql.qp/->honeysql [:duckdb :regex-match-first]
   [driver [_ arg pattern]]
-  [:regexp_extract (sql.qp/->honeysql driver arg) (sql.qp/->honeysql driver pattern) 0])
+  [:regexp_extract (sql.qp/->honeysql driver arg) (sql.qp/->honeysql driver pattern)])
 
 ;; empty result set for queries without result (like insert...)
 (defn- empty-rs []
@@ -265,51 +292,61 @@
   [database_file]
   (subs database_file 3))
 
+;; Creates a new connection to the same DuckDB instance to avoid deadlocks during concurrent operations.
+;; context: observed in tests that sometimes multiple syncs can be triggered on the same db at the same time,
+;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb 
+;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb 
+;; instance to avoid deadlocks. 
+(defn- clone-raw-connection [connection]
+  (let [c3p0-conn (cast com.mchange.v2.c3p0.C3P0ProxyConnection connection)
+        clone-method (.getMethod org.duckdb.DuckDBConnection "duplicate" (into-array Class []))
+        raw-conn-token com.mchange.v2.c3p0.C3P0ProxyConnection/RAW_CONNECTION
+        args (into-array Object [])]
+    (.rawConnectionOperation c3p0-conn clone-method raw-conn-token args)))
+
 (defmethod driver/describe-database :duckdb
   [driver database]
-  (let 
+  (let
    [database_file (get (get database :details) :database_file)
     get_tables_query (str "select * from information_schema.tables "
                                ;; Additionally filter by db_name if connecting to MotherDuck, since
                                ;; multiple databases can be attached and information about the
                                ;; non-target database will be present in information_schema. 
-                                  (if (is_motherduck database_file)
-                                    (let [db_name (motherduck_db_name database_file)]
-                                      (format "where table_catalog = '%s' " db_name))
-                                    ""))]
+                          (if (is_motherduck database_file)
+                            (let [db_name (motherduck_db_name database_file)]
+                              (format "where table_catalog = '%s' " db_name))
+                            ""))]
     {:tables
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
       (fn [conn]
         (set
          (for [{:keys [table_schema table_name]}
-               (jdbc/query {:connection conn}
+               (jdbc/query {:connection (clone-raw-connection conn)}
                            [get_tables_query])]
            {:name table_name :schema table_schema}))))}))
-
-
 
 (defmethod driver/describe-table :duckdb
   [driver database {table_name :name, schema :schema}]
   (let [database_file (get (get database :details) :database_file)
-               get_columns_query (str 
-                                  (format 
-                                   "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'" 
-                                   table_name schema) 
+        get_columns_query (str
+                           (format
+                            "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'"
+                            table_name schema)
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
                                   ;; non-target database will be present in information_schema. 
-                                  (if (is_motherduck database_file)
-                                    (let [db_name (motherduck_db_name database_file)]
-                                      (format "and table_catalog = '%s' " db_name))
-                                    ""))]
+                           (if (is_motherduck database_file)
+                             (let [db_name (motherduck_db_name database_file)]
+                               (format "and table_catalog = '%s' " db_name))
+                             ""))]
     {:name   table_name
      :schema schema
      :fields
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
       (fn [conn] (let [results (jdbc/query
-                                {:connection conn}
+                                {:connection (clone-raw-connection conn)}
                                 [get_columns_query])]
                    (set
                     (for [[idx {column_name :column_name, data_type :data_type}] (m/indexed results)]
