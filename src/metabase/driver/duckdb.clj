@@ -28,8 +28,7 @@
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
-(doseq [[feature supported?] {:metadata/key-constraints      false
-                              :foreign-keys                  false
+(doseq [[feature supported?] {:metadata/key-constraints      false  ;; fetching metadata about foreign key constraints is not supported, but JOINs generally are.
                               :upload-with-auto-pk           false}]
   (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
 
@@ -293,7 +292,12 @@
   [database_file]
   (subs database_file 3))
 
-(defn clone-raw-connection [connection]
+;; Creates a new connection to the same DuckDB instance to avoid deadlocks during concurrent operations.
+;; context: observed in tests that sometimes multiple syncs can be triggered on the same db at the same time,
+;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb 
+;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb 
+;; instance to avoid deadlocks. 
+(defn- clone-raw-connection [connection]
   (let [c3p0-conn (cast com.mchange.v2.c3p0.C3P0ProxyConnection connection)
         clone-method (.getMethod org.duckdb.DuckDBConnection "duplicate" (into-array Class []))
         raw-conn-token com.mchange.v2.c3p0.C3P0ProxyConnection/RAW_CONNECTION
