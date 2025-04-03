@@ -68,7 +68,8 @@
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
   [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}] 
-  (let [database_file_base (first (str/split database_file #"\?"))] 
+  (let [database_file_base (first (str/split database_file #"\?"))
+        database_file_additional_options (second (str/split database_file #"\?"))] 
     (-> details 
         (merge
          {:classname         "org.duckdb.DuckDBDriver"
@@ -90,19 +91,22 @@
          (when (seq (re-find #"^md:" database_file))
            {"motherduck_attach_mode"  "single"})    ;; when connecting to MotherDuck, explicitly connect to a single database
          (when (seq motherduck_token)     ;; Only configure the option if token is provided
-           {"motherduck_token" motherduck_token})) 
-        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type)
-        sql-jdbc.common/handle-additional-options)))
+           {"motherduck_token" motherduck_token})
+         (sql-jdbc.common/additional-options->map (:additional-options details) :url) 
+         (sql-jdbc.common/additional-options->map database_file_additional_options :url))
+        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions 
+                :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type 
+                :advanced-options :additional-options))))
 
 (defn- remove-keys-with-prefix [details prefix]
   (apply dissoc details (filter #(str/starts-with? (name %) prefix) (keys details))))
 
 (defmethod sql-jdbc.conn/connection-details->spec :duckdb
   [_ details-map]
-  (-> details-map
-      (merge {:motherduck_token (get-motherduck-token details-map)})
-      (remove-keys-with-prefix "motherduck_token-")
-      jdbc-spec))
+   (-> details-map
+              (merge {:motherduck_token (get-motherduck-token details-map)})
+              (remove-keys-with-prefix "motherduck_token-")
+              jdbc-spec))
 
 (defmethod sql-jdbc.execute/do-with-connection-with-options :duckdb
   [driver db-or-id-or-spec {:keys [^String session-timezone report-timezone] :as options} f]
