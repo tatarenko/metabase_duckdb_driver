@@ -63,13 +63,18 @@
               ((requiring-resolve 'metabase.models.secret/value->string)))
           ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
 
-
+(defn- database-file-path-split [database_file]
+  (let [url-parts (str/split database_file #"\?")]
+    (if (= 2 (count url-parts))
+      (let [database-file (first url-parts)
+            additional-options (second url-parts)]
+        [database-file additional-options])
+      [database_file ""])))
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
   [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type], :as details}] 
-  (let [database_file_base (first (str/split database_file #"\?"))
-        database_file_additional_options (second (str/split database_file #"\?"))] 
+  (let [[database_file_base database_file_additional_options] (database-file-path-split database_file)]
     (-> details 
         (merge
          {:classname         "org.duckdb.DuckDBDriver"
@@ -94,6 +99,7 @@
            {"motherduck_token" motherduck_token})
          (sql-jdbc.common/additional-options->map (:additional-options details) :url) 
          (sql-jdbc.common/additional-options->map database_file_additional_options :url))
+        ;; remove fields from the metabase config that do not directly go into the jdbc spec
         (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions 
                 :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type 
                 :advanced-options :additional-options))))
@@ -315,7 +321,7 @@
   [driver database]
   (let
    [database_file (get (get database :details) :database_file)
-    database_file (first (str/split database_file #"\?"))  ;; remove additional options in connection string
+    database_file (first (database-file-path-split database_file))  ;; remove additional options in connection string
     get_tables_query (str "select * from information_schema.tables "
                                ;; Additionally filter by db_name if connecting to MotherDuck, since
                                ;; multiple databases can be attached and information about the
@@ -337,7 +343,7 @@
 (defmethod driver/describe-table :duckdb
   [driver database {table_name :name, schema :schema}]
   (let [database_file (get (get database :details) :database_file)
-        database_file (first (str/split database_file #"\?"))  ;; remove additional options in connection string
+        database_file (first (database-file-path-split database_file))  ;; remove additional options in connection string
         get_columns_query (str
                            (format
                             "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'"
