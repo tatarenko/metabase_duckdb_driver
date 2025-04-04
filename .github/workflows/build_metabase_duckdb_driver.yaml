@@ -51,6 +51,13 @@ jobs:
         chmod +x ./bin/build-driver.sh
         ./bin/build-driver.sh duckdb
         
+    - name: Upload driver artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: metabase-duckdb-driver
+        path: metabase/resources/modules/duckdb.metabase-driver.jar
+        if-no-files-found: error
+       
     - name: Run integration tests
       working-directory: ./metabase
       env:
@@ -59,10 +66,3 @@ jobs:
         git apply ./modules/drivers/duckdb/ci/metabase_test_deps.patch
         MB_EDITION=ee yarn build-static-viz
         DRIVERS=duckdb clojure -X:dev:drivers:drivers-dev:ee:ee-dev:test
-        
-    - name: Upload driver artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: metabase-duckdb-driver
-        path: metabase/resources/modules/duckdb.metabase-driver.jar
-        if-no-files-found: error
