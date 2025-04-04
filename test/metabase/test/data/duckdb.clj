@@ -40,7 +40,7 @@
                              :type/DateTime       "TIMESTAMP"
                              :type/DateTimeWithTZ "TIMESTAMPTZ"
                              :type/Decimal        "DECIMAL"
-                             :type/Float          "FLOAT"
+                             :type/Float          "DOUBLE"
                              :type/Integer        "INTEGER"
                              :type/Text           "STRING"
                              :type/Time           "TIME"
