@@ -102,7 +102,7 @@
         ;; remove fields from the metabase config that do not directly go into the jdbc spec
         (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions 
                 :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type 
-                :advanced-options :additional-options))))
+                :advanced-options :additional-options :attach_mode))))
 
 (defn- remove-keys-with-prefix [details prefix]
   (apply dissoc details (filter #(str/starts-with? (name %) prefix) (keys details))))

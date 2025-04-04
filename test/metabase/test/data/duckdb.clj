@@ -35,10 +35,9 @@
   []
   (sql-jdbc.conn/connection-details->spec :duckdb {:old_implicit_casting   true
                                                   "custom_user_agent"     "metabase_test"
-                                                  :database_file         "md:"
-                                                  :subname              "md:"
-                                                  :attach_mode            "workspace"})
-  )
+                                                  :database_file          "md:"
+                                                  :subname                "md:"
+                                                  :attach_mode            "workspace"}))
 
 (defmethod tx/create-db! :duckdb
   [driver dbdef & options] 
@@ -124,3 +123,32 @@
                                     #_table-pattern  table-name
                                     #_types          (into-array String ["BASE TABLE"]))]
          (.next rset))))))
+
+
+(defn- delete-old-databases!
+  "Remove all databases from motherduck account except for the default ones. Test runs can create databases that need to be cleaned up."
+  [^java.sql.Connection conn]
+  (let [drop-sql (fn [db-name] (format "DROP DATABASE IF EXISTS \"%s\" CASCADE;" db-name))]
+    (with-open [stmt (.createStatement conn)]
+      (with-open [rset (.executeQuery stmt "select database_name from duckdb_databases() where type = 'motherduck' and database_name not in ('my_db', 'sample_data'); ")]
+        (while (.next rset) 
+          (let [db-name (.getString rset "database_name")]
+            (with-open [inner-stmt (.createStatement conn)]
+              (.execute inner-stmt (drop-sql db-name)))))))))
+
+(defmethod tx/before-run :duckdb
+  [driver]
+  (sql-jdbc.execute/do-with-connection-with-options
+   driver
+   (md-workspace-mode-spec)
+   {:write? true}
+   delete-old-databases!))
+
+
+(defmethod tx/after-run :duckdb
+  [driver]
+  (sql-jdbc.execute/do-with-connection-with-options
+   driver
+   (md-workspace-mode-spec)
+   {:write? true}
+   delete-old-databases!))
