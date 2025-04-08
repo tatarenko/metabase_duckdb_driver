@@ -8,7 +8,6 @@
    [metabase.driver.sql-jdbc.sync.describe-table-test :as describe-table-test]
    [metabase.test.data.interface :as tx]
    [metabase.test.data.sql :as sql.tx :refer [qualify-and-quote]]
-   [metabase.test.data.sql-jdbc :as sql-jdbc.tx] 
    [metabase.test.data.sql-jdbc.execute :as sql-jdbc.test-execute]
    [metabase.test.data.sql-jdbc.load-data :as load-data]
    [metabase.test.data.sql-jdbc.spec  :refer [dbdef->spec]]
@@ -16,8 +15,7 @@
 
 (set! *warn-on-reflection* true)
 
-
-(sql-jdbc.tx/add-test-extensions! :motherduck)
+;; (sql-jdbc.tx/add-test-extensions! :motherduck)
 
 (doseq [[feature supported?] {:upload-with-auto-pk (not config/is-test?)
                               :test/time-type false
