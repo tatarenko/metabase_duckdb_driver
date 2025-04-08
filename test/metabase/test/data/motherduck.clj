@@ -15,8 +15,6 @@
 
 (set! *warn-on-reflection* true)
 
-;; (sql-jdbc.tx/add-test-extensions! :motherduck)
-
 (doseq [[feature supported?] {:upload-with-auto-pk (not config/is-test?)
                               :test/time-type false
                               ::describe-table-test/describe-materialized-view-fields false  ;; motherduck has no materialized views
@@ -30,6 +28,7 @@
 (defmethod dbdef->spec :motherduck [driver context dbdef]
   (sql-jdbc.conn/connection-details->spec driver (tx/dbdef->connection-details driver context dbdef)))
 
+;; use this to connect to MotherDuck in workspace mode, to set up and destroy test databases.
 (defn- md-workspace-mode-spec 
   []
   (sql-jdbc.conn/connection-details->spec :motherduck {:old_implicit_casting   true
@@ -41,8 +40,7 @@
 (defmethod tx/create-db! :motherduck
   [driver dbdef & options] 
   (sql-jdbc.execute/do-with-connection-with-options
-   driver
-    ;; `:db` context = use the specific database we created in [[create-db-execute-server-statements!]]
+   driver 
    (md-workspace-mode-spec)
    {:write? true}
    (fn [^java.sql.Connection conn]
@@ -75,7 +73,6 @@
 
 (defmethod sql.tx/pk-sql-type :motherduck [_] "INTEGER")
 
-;; (defmethod sql.tx/drop-db-if-exists-sql    :motherduck [driver {:keys [database-name]}] (format "DROP DATABASE IF EXISTS %s CASCADE" (qualify-and-quote driver database-name)))
 (defmethod sql.tx/drop-db-if-exists-sql    :motherduck [& _] nil)
 
 (defmethod ddl/drop-db-ddl-statements   :motherduck [driver {:keys [database-name]}] 
