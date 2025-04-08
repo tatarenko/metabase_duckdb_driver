@@ -73,7 +73,8 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}] 
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, 
+           motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}] 
   (let [[database_file_base database_file_additional_options] (database-file-path-split database_file)]
     (-> details 
         (merge
@@ -94,6 +95,9 @@
          (when allow_unsigned_extensions
            {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
          (when (seq (re-find #"^md:" database_file))
+            ;; attach_mode option is not settable the user, it's always single mode when 
+            ;; using motherduck, but in tests we need to be able to connect to motherduck in 
+            ;; workspace mode, so it's handled here.
            {"motherduck_attach_mode"  (or attach_mode "single")})    ;; when connecting to MotherDuck, explicitly connect to a single database
          (when (seq motherduck_token)     ;; Only configure the option if token is provided
            {"motherduck_token" motherduck_token})
