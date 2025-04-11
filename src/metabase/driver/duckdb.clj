@@ -9,11 +9,9 @@
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-   [metabase.driver.sql.query-processor :as sql.qp]
-   [metabase.lib.schema.temporal-bucketing :as lib.schema.temporal-bucketing]
+   [metabase.driver.sql.query-processor :as sql.qp] 
    [metabase.util.honey-sql-2 :as h2x]
-   [metabase.util.log :as log]
-   [metabase.util.malli :as mu])
+   [metabase.util.log :as log])
   (:import
    (java.sql
     Connection
