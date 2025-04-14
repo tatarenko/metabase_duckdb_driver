@@ -95,7 +95,7 @@
          (when allow_unsigned_extensions
            {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
          (when (seq (re-find #"^md:" database_file))
-            ;; attach_mode option is not settable the user, it's always single mode when 
+            ;; attach_mode option is not settable by the user, it's always single mode when 
             ;; using motherduck, but in tests we need to be able to connect to motherduck in 
             ;; workspace mode, so it's handled here.
            {"motherduck_attach_mode"  (or attach_mode "single")})    ;; when connecting to MotherDuck, explicitly connect to a single database

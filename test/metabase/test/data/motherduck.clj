@@ -73,10 +73,8 @@
 
 (defmethod sql.tx/pk-sql-type :motherduck [_] "INTEGER")
 
-(defmethod sql.tx/drop-db-if-exists-sql    :motherduck [& _] nil)
-
 (defmethod ddl/drop-db-ddl-statements   :motherduck [driver {:keys [database-name]}] 
-  ["ATTACH ':memory:' AS memdb;"
+  ["ATTACH IF NOT EXISTS ':memory:' AS memdb;"
    "USE memdb;"
    (format "DROP DATABASE %s CASCADE;" (qualify-and-quote driver database-name))])
 
@@ -103,9 +101,6 @@
      (md-workspace-mode-spec)
      {:write? true}
      (fn [^java.sql.Connection conn]
-       (try (.setAutoCommit conn true)
-            (catch Throwable _
-              (log/debugf "`.setAutoCommit` failed with engine `%s`" (name driver))))
        (sql-jdbc.test-execute/execute-sql! driver conn (sql.tx/create-db-sql driver dbdef))))
     
     (sql-jdbc.execute/do-with-connection-with-options
