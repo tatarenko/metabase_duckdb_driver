@@ -4,12 +4,13 @@
    [clojure.string :as str]
    [java-time.api :as t]
    [medley.core :as m]
+   [metabase.connection-pool :as connection-pool]
    [metabase.driver :as driver]
    [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-   [metabase.driver.sql.query-processor :as sql.qp] 
+   [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.util.honey-sql-2 :as h2x]
    [metabase.util.log :as log])
   (:import
@@ -22,7 +23,9 @@
     Time
     Types)
    (java.time LocalDate LocalTime OffsetTime)
-   (java.time.temporal ChronoField)))
+   (java.time.temporal ChronoField)
+   (com.mchange.v2.c3p0 DataSources)
+   (javax.sql DataSource)))
 
 (set! *warn-on-reflection* true)
 
@@ -40,7 +43,7 @@
 
 (def premium-features-namespace
   (try
-    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after 
+    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after
     'metabase.premium-features.core
     (catch Exception _
       (try
@@ -54,9 +57,18 @@
   (let [premium-feature-ns (find-ns premium-features-namespace)]
     ((ns-resolve premium-feature-ns 'is-hosted?))))
 
+(defn- is_motherduck
+  [database_file]
+  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
+
+(defn- motherduck_db_name
+  [database_file]
+  (subs database_file 3))
+
+
 (defn- get-motherduck-token [details-map]
   (try
-     ;; For Metabase 0.52 or after 
+     ;; For Metabase 0.52 or after
     ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
     (catch Exception _
        ;; For Metabase < 0.52
@@ -74,8 +86,8 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, 
-           motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}] 
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting,
+           motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}]
   (let [[database_file_base database_file_additional_options] (database-file-path-split database_file)]
     (-> details
         (merge
@@ -95,18 +107,19 @@
            {"azure_transport_option_type" (str azure_transport_option_type)})
          (when allow_unsigned_extensions
            {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
-         (when (seq (re-find #"^md:" database_file))
-            ;; attach_mode option is not settable by the user, it's always single mode when 
-            ;; using motherduck, but in tests we need to be able to connect to motherduck in 
+         (when (is_motherduck database_file)
+            ;; attach_mode option is not settable by the user, it's always single mode when
+            ;; using motherduck, but in tests we need to be able to connect to motherduck in
             ;; workspace mode, so it's handled here.
-           {"motherduck_attach_mode"  (or attach_mode "single")})    ;; when connecting to MotherDuck, explicitly connect to a single database
+           {"motherduck_attach_mode"  (or attach_mode "single")}
+           )    ;; when connecting to MotherDuck, explicitly connect to a single database
          (when (seq motherduck_token)     ;; Only configure the option if token is provided
            {"motherduck_token" motherduck_token})
          (sql-jdbc.common/additional-options->map (:additional-options details) :url)
          (sql-jdbc.common/additional-options->map database_file_additional_options :url))
         ;; remove fields from the metabase config that do not directly go into the jdbc spec
-        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions 
-                :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type 
+        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions
+                :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type
                 :advanced-options :additional-options :attach_mode))))
 
 (defn- remove-keys-with-prefix [details prefix]
@@ -118,6 +131,17 @@
       (merge {:motherduck_token (get-motherduck-token details-map)})
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
+
+(defmethod sql-jdbc.conn/connection-pool-spec :duckdb
+  [_driver {:keys [^DataSource datasource], :as spec} pool-properties] 
+  (if datasource
+    {:datasource (DataSources/pooledDataSource datasource (connection-pool/map->properties pool-properties))}
+    (let [session_names ["1" "2" "3" "4"]
+          multi-conn-pool-spec (connection-pool/multi-connection-pool-spec pool-properties)]
+      ;; for each session_name in session_names, add a new connection to the multi-conn-pool-spec  where the jdbc url is the base url with "?session_hint={session_name}" appended to it
+      (doseq [session_name session_names]
+        ((:add-connection multi-conn-pool-spec) session_name (merge spec {:subname (str (:subname spec) "?session_hint=" session_name)})))
+      multi-conn-pool-spec)))
 
 (defmethod sql-jdbc.execute/do-with-connection-with-options :duckdb
   [driver db-or-id-or-spec {:keys [^String session-timezone report-timezone] :as options} f]
@@ -334,19 +358,12 @@
     (.getResultSet stmt)
     (empty-rs)))
 
-(defn- is_motherduck
-  [database_file]
-  (and (seq (re-find #"^md:" database_file)) (> (count database_file) 3)))
-
-(defn- motherduck_db_name
-  [database_file]
-  (subs database_file 3))
 
 ;; Creates a new connection to the same DuckDB instance to avoid deadlocks during concurrent operations.
 ;; context: observed in tests that sometimes multiple syncs can be triggered on the same db at the same time,
-;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb 
-;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb 
-;; instance to avoid deadlocks. 
+;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb
+;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb
+;; instance to avoid deadlocks.
 (defn- clone-raw-connection [connection]
   (let [c3p0-conn (cast com.mchange.v2.c3p0.C3P0ProxyConnection connection)
         clone-method (.getMethod org.duckdb.DuckDBConnection "duplicate" (into-array Class []))
@@ -362,7 +379,7 @@
     get_tables_query (str "select * from information_schema.tables "
                                ;; Additionally filter by db_name if connecting to MotherDuck, since
                                ;; multiple databases can be attached and information about the
-                               ;; non-target database will be present in information_schema. 
+                               ;; non-target database will be present in information_schema.
                           (if (is_motherduck database_file)
                             (let [db_name_without_md (motherduck_db_name database_file)]
                               (format "where table_catalog = '%s' " db_name_without_md))
@@ -387,7 +404,7 @@
                             table_name schema)
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
-                                  ;; non-target database will be present in information_schema. 
+                                  ;; non-target database will be present in information_schema.
                            (if (is_motherduck database_file)
                              (let [db_name_without_md (motherduck_db_name database_file)]
                                (format "and table_catalog = '%s' " db_name_without_md))
