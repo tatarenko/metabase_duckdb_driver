@@ -1,6 +1,6 @@
 info:
   name: Metabase DuckDB Driver
-  version: 1.2.0
+  version: 1.2.2.0
   description: Allows Metabase to connect to DuckDB databases.
 contact-info:
   name: MotherDuck Support
@@ -24,6 +24,11 @@ driver:
       type: secret
       secret-kind: password
       required: true
+    - advanced-options-start
+    - merge:
+        - additional-options
+        - display-name: Additional DuckDB connection string options
+          placeholder: 'http_keep_alive=false'
 
 init:
   - step: load-namespace
