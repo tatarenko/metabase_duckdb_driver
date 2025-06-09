@@ -56,13 +56,17 @@
 
 (defn- get-motherduck-token [details-map]
   (try
-     ;; For Metabase 0.52 or after 
-    ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
+    ;; For Metabase 0.55 or after
+    ((requiring-resolve 'metabase.secrets.models.secret/value-as-string) :duckdb details-map "motherduck_token")
     (catch Exception _
-       ;; For Metabase < 0.52
-      (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
-              ((requiring-resolve 'metabase.models.secret/value->string)))
-          ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))
+      (try
+        ;; For Metabase < 0.55
+        ((requiring-resolve 'metabase.models.secret/value-as-string) :duckdb details-map "motherduck_token")
+        (catch Exception _
+          ;; For Metabase < 0.52
+          (or (-> ((requiring-resolve 'metabase.models.secret/db-details-prop->secret-map) details-map "motherduck_token")
+                  ((requiring-resolve 'metabase.models.secret/value->string)))
+              ((requiring-resolve 'metabase.models.secret/get-secret-string) details-map "motherduck_token")))))))
 
 (defn- database-file-path-split [database_file]
   (let [url-parts (str/split database_file #"\?")]
