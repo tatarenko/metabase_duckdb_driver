@@ -22,9 +22,22 @@
     Time
     Types)
    (java.time LocalDate LocalTime OffsetTime)
-   (java.time.temporal ChronoField)))
+   (java.time.temporal ChronoField)
+   (java.util.concurrent ConcurrentHashMap)
+   (java.util.concurrent.atomic AtomicBoolean)))
 
 (set! *warn-on-reflection* true)
+
+;; Thread-safe tracking of init SQL execution per database connection
+(def ^:private ^ConcurrentHashMap init-sql-states (ConcurrentHashMap.))
+
+(defn- get-database-key
+  "Generate a unique key for a database connection based on its connection details"
+  [db-or-id-or-spec]
+  (let [details (if (map? (:details db-or-id-or-spec))
+                  (:details db-or-id-or-spec)
+                  db-or-id-or-spec)]
+    (str (:database_file details) "|" (:init_sql details))))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -134,23 +147,22 @@
      (when (not (sql-jdbc.execute/recursive-connection?))
        (when-let [init-sql (-> db-or-id-or-spec :details :init_sql)]
          (when (seq (str/trim init-sql))
-           (with-open [stmt (.createStatement conn)]
-             ;; Ensure init sql only executes once per DuckDB instance using a DuckDB variable
-             (let [rs (.executeQuery stmt "SELECT getvariable('initialized');")]
-               (when (.next rs)
-                 (let [initialized? (.getBoolean rs 1)]
-                   (log/infof "DuckDB init SQL executed: %s" initialized?)
-                   (when-not initialized?
-                     (log/infof "DuckDB init SQL has not been executed, executing now...")
-                     (try
-                       (log/infof "Executing DuckDB init SQL: %s" init-sql)
-                       (.execute stmt init-sql)
-                       (.execute stmt "SET VARIABLE initialized = true;")
-                       (log/tracef "Successfully executed DuckDB init SQL")
-                       (catch Throwable e
-                         (log/errorf e "Failed to execute DuckDB init SQL: %s" init-sql))))))))
-
-           (log/tracef "DuckDB init SQL check completed"))))
+           (let [db-key (get-database-key db-or-id-or-spec)
+                 init-state (.computeIfAbsent init-sql-states db-key
+                                            (fn [_] (AtomicBoolean. false)))]
+             ;; Use atomic compare-and-set to ensure only one thread executes init SQL
+             (when (.compareAndSet ^AtomicBoolean init-state false true)
+               (log/infof "DuckDB init SQL has not been executed for this database, executing now...")
+               (try 
+                 (with-open [stmt (.createStatement conn)]
+                   (log/infof "Executing DuckDB init SQL: %s" init-sql)
+                   (.execute stmt init-sql)
+                   (log/tracef "Successfully executed DuckDB init SQL"))
+                 (catch Throwable e
+                   ;; If init SQL fails, reset the state so it can be retried
+                   (.set ^AtomicBoolean init-state false)
+                   (log/errorf e "Failed to execute DuckDB init SQL: %s" init-sql))))
+             (log/tracef "DuckDB init SQL check completed")))))
      ;; Additionally set timezone if provided and we're not in a recursive connection
      (when (and (or report-timezone session-timezone) (not (sql-jdbc.execute/recursive-connection?)))
        (let [timezone-to-use (or report-timezone session-timezone)]
