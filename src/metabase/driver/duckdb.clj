@@ -31,13 +31,16 @@
 ;; Thread-safe tracking of init SQL execution per database connection
 (def ^:private ^ConcurrentHashMap init-sql-states (ConcurrentHashMap.))
 
+
+;; Generate a unique key for a database connection based on its id + connection details,
+;; so when connection details change, the key changes and the init SQL is executed again
 (defn- get-database-key
-  "Generate a unique key for a database connection based on its connection details"
   [db-or-id-or-spec]
   (let [details (if (map? (:details db-or-id-or-spec))
                   (:details db-or-id-or-spec)
-                  db-or-id-or-spec)]
-    (str (:database_file details) "|" (:init_sql details))))
+                  db-or-id-or-spec)
+        id (get db-or-id-or-spec :id)]
+    (assoc details :id id)))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -150,19 +153,17 @@
            (let [db-key (get-database-key db-or-id-or-spec)
                  init-state (.computeIfAbsent init-sql-states db-key
                                             (fn [_] (AtomicBoolean. false)))]
-             ;; Use atomic compare-and-set to ensure only one thread executes init SQL
+             ;; Ensure init SQL is executed only once
              (when (.compareAndSet ^AtomicBoolean init-state false true)
                (log/infof "DuckDB init SQL has not been executed for this database, executing now...")
                (try 
                  (with-open [stmt (.createStatement conn)]
-                   (log/infof "Executing DuckDB init SQL: %s" init-sql)
                    (.execute stmt init-sql)
                    (log/tracef "Successfully executed DuckDB init SQL"))
                  (catch Throwable e
                    ;; If init SQL fails, reset the state so it can be retried
                    (.set ^AtomicBoolean init-state false)
-                   (log/errorf e "Failed to execute DuckDB init SQL: %s" init-sql))))
-             (log/tracef "DuckDB init SQL check completed")))))
+                   (log/errorf e "Failed to execute DuckDB init SQL"))))))))
      ;; Additionally set timezone if provided and we're not in a recursive connection
      (when (and (or report-timezone session-timezone) (not (sql-jdbc.execute/recursive-connection?)))
        (let [timezone-to-use (or report-timezone session-timezone)]
