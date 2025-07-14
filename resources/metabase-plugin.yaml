@@ -38,6 +38,11 @@ driver:
       type: secret
       secret-kind: password
       required: false
+    - name: init_sql
+      display-name: Init SQL (run on each new DuckDB instance)
+      type: text
+      required: false
+      placeholder: "INSTALL httpfs; LOAD httpfs;"
     - advanced-options-start
     - merge:
         - additional-options

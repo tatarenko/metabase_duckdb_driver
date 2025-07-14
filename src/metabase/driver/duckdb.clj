@@ -9,7 +9,7 @@
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
    [metabase.driver.sql-jdbc.sync :as sql-jdbc.sync]
-   [metabase.driver.sql.query-processor :as sql.qp] 
+   [metabase.driver.sql.query-processor :as sql.qp]
    [metabase.util.honey-sql-2 :as h2x]
    [metabase.util.log :as log])
   (:import
@@ -22,9 +22,25 @@
     Time
     Types)
    (java.time LocalDate LocalTime OffsetTime)
-   (java.time.temporal ChronoField)))
+   (java.time.temporal ChronoField)
+   (java.util.concurrent ConcurrentHashMap)
+   (java.util.concurrent.atomic AtomicBoolean)))
 
 (set! *warn-on-reflection* true)
+
+;; Thread-safe tracking of init SQL execution per database connection
+(def ^:private ^ConcurrentHashMap init-sql-states (ConcurrentHashMap.))
+
+
+;; Generate a unique key for a database connection based on its id + connection details,
+;; so when connection details change, the key changes and the init SQL is executed again
+(defn- get-database-key
+  [db-or-id-or-spec]
+  (let [details (if (map? (:details db-or-id-or-spec))
+                  (:details db-or-id-or-spec)
+                  db-or-id-or-spec)
+        id (get db-or-id-or-spec :id)]
+    (assoc details :id id)))
 
 (driver/register! :duckdb, :parent :sql-jdbc)
 
@@ -40,7 +56,7 @@
 
 (def premium-features-namespace
   (try
-    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after 
+    (require '[metabase.premium-features.core :as premium-features])    ;; For Metabase 0.52 or after
     'metabase.premium-features.core
     (catch Exception _
       (try
@@ -78,8 +94,8 @@
 
 (defn- jdbc-spec
   "Creates a spec for `clojure.java.jdbc` to use for connecting to DuckDB via JDBC from the given `opts`"
-  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting, 
-           motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}] 
+  [{:keys [database_file, read_only, allow_unsigned_extensions, old_implicit_casting,
+           motherduck_token, memory_limit, azure_transport_option_type, attach_mode], :as details}]
   (let [[database_file_base database_file_additional_options] (database-file-path-split database_file)]
     (-> details
         (merge
@@ -100,8 +116,8 @@
          (when allow_unsigned_extensions
            {"allow_unsigned_extensions" (str allow_unsigned_extensions)})
          (when (seq (re-find #"^md:" database_file))
-            ;; attach_mode option is not settable by the user, it's always single mode when 
-            ;; using motherduck, but in tests we need to be able to connect to motherduck in 
+            ;; attach_mode option is not settable by the user, it's always single mode when
+            ;; using motherduck, but in tests we need to be able to connect to motherduck in
             ;; workspace mode, so it's handled here.
            {"motherduck_attach_mode"  (or attach_mode "single")})    ;; when connecting to MotherDuck, explicitly connect to a single database
          (when (seq motherduck_token)     ;; Only configure the option if token is provided
@@ -109,9 +125,9 @@
          (sql-jdbc.common/additional-options->map (:additional-options details) :url)
          (sql-jdbc.common/additional-options->map database_file_additional_options :url))
         ;; remove fields from the metabase config that do not directly go into the jdbc spec
-        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions 
-                :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type 
-                :advanced-options :additional-options :attach_mode))))
+        (dissoc :database_file :read_only :port :engine :allow_unsigned_extensions
+                :old_implicit_casting :motherduck_token :memory_limit :azure_transport_option_type
+                :advanced-options :additional-options :attach_mode :init_sql))))
 
 (defn- remove-keys-with-prefix [details prefix]
   (apply dissoc details (filter #(str/starts-with? (name %) prefix) (keys details))))
@@ -131,6 +147,23 @@
    db-or-id-or-spec
    options
    (fn [^Connection conn]
+     (when (not (sql-jdbc.execute/recursive-connection?))
+       (when-let [init-sql (-> db-or-id-or-spec :details :init_sql)]
+         (when (seq (str/trim init-sql))
+           (let [db-key (get-database-key db-or-id-or-spec)
+                 init-state (.computeIfAbsent init-sql-states db-key
+                                            (fn [_] (AtomicBoolean. false)))]
+             ;; Ensure init SQL is executed only once
+             (when (.compareAndSet ^AtomicBoolean init-state false true)
+               (log/infof "DuckDB init SQL has not been executed for this database, executing now...")
+               (try 
+                 (with-open [stmt (.createStatement conn)]
+                   (.execute stmt init-sql)
+                   (log/tracef "Successfully executed DuckDB init SQL"))
+                 (catch Throwable e
+                   ;; If init SQL fails, reset the state so it can be retried
+                   (.set ^AtomicBoolean init-state false)
+                   (log/errorf e "Failed to execute DuckDB init SQL"))))))))
      ;; Additionally set timezone if provided and we're not in a recursive connection
      (when (and (or report-timezone session-timezone) (not (sql-jdbc.execute/recursive-connection?)))
        (let [timezone-to-use (or report-timezone session-timezone)]
@@ -348,9 +381,9 @@
 
 ;; Creates a new connection to the same DuckDB instance to avoid deadlocks during concurrent operations.
 ;; context: observed in tests that sometimes multiple syncs can be triggered on the same db at the same time,
-;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb 
-;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb 
-;; instance to avoid deadlocks. 
+;; (and potentially the deletion of the local duckdb file) that results in bad_weak_ptr errors on the duckdb
+;; connection object and deadlocks, so creating a lightweight clone of the connection to the same duckdb
+;; instance to avoid deadlocks.
 (defn- clone-raw-connection [connection]
   (let [c3p0-conn (cast com.mchange.v2.c3p0.C3P0ProxyConnection connection)
         clone-method (.getMethod org.duckdb.DuckDBConnection "duplicate" (into-array Class []))
@@ -366,7 +399,7 @@
     get_tables_query (str "select * from information_schema.tables "
                                ;; Additionally filter by db_name if connecting to MotherDuck, since
                                ;; multiple databases can be attached and information about the
-                               ;; non-target database will be present in information_schema. 
+                               ;; non-target database will be present in information_schema.
                           (if (is_motherduck database_file)
                             (let [db_name_without_md (motherduck_db_name database_file)]
                               (format "where table_catalog = '%s' " db_name_without_md))
@@ -391,7 +424,7 @@
                             table_name schema)
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
-                                  ;; non-target database will be present in information_schema. 
+                                  ;; non-target database will be present in information_schema.
                            (if (is_motherduck database_file)
                              (let [db_name_without_md (motherduck_db_name database_file)]
                                (format "and table_catalog = '%s' " db_name_without_md))
