@@ -108,6 +108,54 @@ The same way you could mount the dir with parquet files into container and make 
 
 ## How to build the DuckDB .jar plugin yourself
 
+### Building on Ubuntu
+
+The steps below were tested on Ubuntu 22.04, but should work for any recent Debian/Ubuntu derivative.
+
+1. Install the system dependencies required by Metabase's build tooling:
+   ```bash
+   sudo apt update
+   sudo apt install -y git curl openjdk-17-jdk
+   ```
+   Then install the Clojure CLI tools (Metabase uses the Clojure build toolchain):
+   ```bash
+   curl -L -O https://github.com/clojure/brew-install/releases/latest/download/linux-install.sh
+   chmod +x linux-install.sh
+   sudo ./linux-install.sh
+   rm linux-install.sh
+   ```
+
+2. Create a workspace directory and clone both Metabase and the DuckDB driver source code. Metabase v0.56.6 is the latest release that this driver targets:
+   ```bash
+   mkdir -p ~/duckdb_plugin
+   cd ~/duckdb_plugin
+   git clone https://github.com/MotherDuck-Open-Source/metabase_duckdb_driver.git
+   git clone --branch 'v0.56.6' https://github.com/metabase/metabase.git
+   ```
+
+3. Register the DuckDB driver with the cloned Metabase source tree by adding it to the Metabase drivers manifest. Edit `metabase/modules/drivers/deps.edn` and append the following line inside the map of `:extra-deps` (near the existing driver entries):
+   ```clojure
+     metabase/duckdb             {:local/root "duckdb"}
+   ```
+
+4. Copy the DuckDB driver source into the Metabase repository:
+   ```bash
+   mkdir -p metabase/modules/drivers/duckdb
+   cp -r metabase_duckdb_driver/* metabase/modules/drivers/duckdb/
+   ```
+
+5. Build the driver JAR using the Metabase build tooling:
+   ```bash
+   cd ~/duckdb_plugin/metabase
+   clojure -X:build:drivers:build/driver :driver :duckdb
+   ```
+
+6. The compiled plugin will be available at `metabase/resources/modules/duckdb.metabase-driver.jar`. Copy this file into the `plugins/` directory next to your Metabase JAR (or wherever `MB_PLUGINS_DIR` points) and restart Metabase to load the driver. You can sanity-check that the build produced the plugin by running `ls -lh metabase/resources/modules/duckdb.metabase-driver.jar` and looking for a several-megabyte JAR.
+
+> Verification note: these steps were exercised in a clean Ubuntu 22.04 container. The only hurdle encountered was a corporate-style firewall that blocked outbound HTTPS requests from the Clojure CLI to Maven Central, which surfaces as `Failed to read artifact descriptor for buddy:buddy-core:jar:1.12.0-430`. If you hit that error, double-check that the build host can reach <https://repo1.maven.org/maven2/> (for example with `curl -I https://repo1.maven.org/maven2/`) or configure your proxy before rerunning the build command.
+
+### Building with the VS Code DevContainer
+
 1. Install VS Code with [DevContainer](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension (see [details](https://code.visualstudio.com/docs/devcontainers/containers))
 2. Create some folder, let's say `duckdb_plugin`
 3. Clone the `metabase_duckdb_driver` repository into `duckdb_plugin` folder
