@@ -139,6 +139,13 @@
       (remove-keys-with-prefix "motherduck_token-")
       jdbc-spec))
 
+(defmethod sql-jdbc.conn/data-warehouse-connection-pool-properties :duckdb
+  [driver database]
+  (assoc ((get-method sql-jdbc.conn/data-warehouse-connection-pool-properties :default)
+          driver
+          database)
+         "maxPoolSize" 1))
+
 (defmethod sql-jdbc.execute/do-with-connection-with-options :duckdb
   [driver db-or-id-or-spec {:keys [^String session-timezone report-timezone] :as options} f]
   ;; First use the parent implementation to get the connection with standard options
