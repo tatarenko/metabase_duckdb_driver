@@ -240,7 +240,10 @@
 
 (defmethod sql-jdbc.sync/database-type->base-type :duckdb
   [_ field-type]
-  (database-type->base-type field-type))
+  (let [base-type (when field-type (database-type->base-type field-type))]
+    (when (nil? base-type)
+      (log/warnf "Unknown DuckDB field type %s, defaulting base type to :type/*" field-type))
+    (or base-type :type/*)))
 
 (defn- local-time-to-time [^LocalTime lt]
   (Time. (.getLong lt ChronoField/MILLI_OF_DAY)))
