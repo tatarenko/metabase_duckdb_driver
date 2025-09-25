@@ -5,6 +5,7 @@
    [java-time.api :as t]
    [medley.core :as m]
    [metabase.driver :as driver]
+   [metabase.driver-api.core :as driver-api]
    [metabase.driver.sql-jdbc.common :as sql-jdbc.common]
    [metabase.driver.sql-jdbc.connection :as sql-jdbc.conn]
    [metabase.driver.sql-jdbc.execute :as sql-jdbc.execute]
@@ -46,7 +47,8 @@
 
 (doseq [[feature supported?] {:metadata/key-constraints      false  ;; fetching metadata about foreign key constraints is not supported, but JOINs generally are.
                               :upload-with-auto-pk           false
-                              :datetime-diff                 true}]
+                              :datetime-diff                 true
+                              :schemas                       false}]
   (defmethod driver/database-supports? [:duckdb feature] [_driver _feature _db] supported?))
 
 (defmethod sql-jdbc.conn/data-source-name :duckdb
@@ -419,16 +421,21 @@
          (for [{:keys [table_schema table_name]}
                (jdbc/query {:connection (clone-raw-connection conn)}
                            [get_tables_query])]
-           {:name table_name :schema table_schema}))))}))
+           {:name          table_name
+            :schema        nil
+            :duckdb/schema table_schema}))))}))
 
 (defmethod driver/describe-table :duckdb
-  [driver database {table_name :name, schema :schema}]
+  [driver database {table_name :name, schema :schema, duckdb-schema :duckdb/schema}]
   (let [database_file (get (get database :details) :database_file)
         database_file (first (database-file-path-split database_file))  ;; remove additional options in connection string
+        schema-name (or duckdb-schema schema)
         get_columns_query (str
                            (format
-                            "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'"
-                            table_name schema)
+                            "select * from information_schema.columns where table_name = '%s'"
+                            table_name)
+                           (when schema-name
+                             (format " and table_schema = '%s'" schema-name))
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
                                   ;; non-target database will be present in information_schema.
@@ -437,7 +444,8 @@
                                (format "and table_catalog = '%s' " db_name_without_md))
                              ""))]
     {:name   table_name
-     :schema schema
+     :schema nil
+     :duckdb/schema schema-name
      :fields
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
