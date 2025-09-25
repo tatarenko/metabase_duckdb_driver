@@ -419,25 +419,32 @@
          (for [{:keys [table_schema table_name]}
                (jdbc/query {:connection (clone-raw-connection conn)}
                            [get_tables_query])]
-           {:name table_name :schema table_schema}))))}))
+           {:name           table_name
+            :schema         nil
+            :duckdb/schema table_schema}))))}))
 
 (defmethod driver/describe-table :duckdb
-  [driver database {table_name :name, schema :schema}]
+  [driver database {table_name :name, schema :schema :as table}]
   (let [database_file (get (get database :details) :database_file)
         database_file (first (database-file-path-split database_file))  ;; remove additional options in connection string
+        duckdb-schema (or (:duckdb/schema table) schema)
+        schema-filter (if duckdb-schema
+                        (format " and table_schema = '%s'" duckdb-schema)
+                        "")
         get_columns_query (str
                            (format
-                            "select * from information_schema.columns where table_name = '%s' and table_schema = '%s'"
-                            table_name schema)
+                            "select * from information_schema.columns where table_name = '%s'"
+                            table_name)
+                           schema-filter
                                   ;; Additionally filter by db_name if connecting to MotherDuck, since
                                   ;; multiple databases can be attached and information about the
                                   ;; non-target database will be present in information_schema.
                            (if (is_motherduck database_file)
                              (let [db_name_without_md (motherduck_db_name database_file)]
-                               (format "and table_catalog = '%s' " db_name_without_md))
+                               (format " and table_catalog = '%s' " db_name_without_md))
                              ""))]
     {:name   table_name
-     :schema schema
+     :schema nil
      :fields
      (sql-jdbc.execute/do-with-connection-with-options
       driver database nil
