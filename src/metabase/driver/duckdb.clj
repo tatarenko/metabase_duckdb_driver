@@ -25,12 +25,14 @@
    (java.time LocalDate LocalTime OffsetTime)
    (java.time.temporal ChronoField)
    (java.util.concurrent ConcurrentHashMap)
-   (java.util.concurrent.atomic AtomicBoolean)))
+   (java.util.concurrent.atomic AtomicBoolean)
+   (java.util.concurrent.locks ReentrantLock)))
 
 (set! *warn-on-reflection* true)
 
 ;; Thread-safe tracking of init SQL execution per database connection
 (def ^:private ^ConcurrentHashMap init-sql-states (ConcurrentHashMap.))
+(def ^:private ^ReentrantLock init-sql-lock (ReentrantLock.))
 
 
 ;; Generate a unique key for a database connection based on its id + connection details,
@@ -164,15 +166,18 @@
                                             (fn [_] (AtomicBoolean. false)))]
              ;; Ensure init SQL is executed only once
              (when (.compareAndSet ^AtomicBoolean init-state false true)
+               (.lock init-sql-lock)
                (log/infof "DuckDB init SQL has not been executed for this database, executing now...")
-               (try 
+               (try
                  (with-open [stmt (.createStatement conn)]
                    (.execute stmt init-sql)
                    (log/tracef "Successfully executed DuckDB init SQL"))
                  (catch Throwable e
                    ;; If init SQL fails, reset the state so it can be retried
                    (.set ^AtomicBoolean init-state false)
-                   (log/errorf e "Failed to execute DuckDB init SQL"))))))))
+                   (log/errorf e "Failed to execute DuckDB init SQL"))
+                 (finally
+                   (.unlock init-sql-lock))))))))
      ;; Additionally set timezone if provided and we're not in a recursive connection
      (when (and (or report-timezone session-timezone) (not (sql-jdbc.execute/recursive-connection?)))
        (let [timezone-to-use (or report-timezone session-timezone)]
